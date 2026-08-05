@@ -197,6 +197,7 @@
 
 <nav class="tabs">
   <button class="tab active" data-panel="calibrator">Calibrator</button>
+  <button class="tab" data-panel="board">Best Board</button>
   <button class="tab" data-panel="situational">Situational Scorer</button>
   <button class="tab" data-panel="settings">Settings</button>
 </nav>
@@ -308,6 +309,55 @@
 
   <div id="resultsWrap"></div>
 
+</section>
+
+<!-- ============ BEST BOARD ============ -->
+<section class="panel" id="panel-board">
+  <div class="section">
+    <div class="section-title">
+      <span>Best available prices</span>
+      <span class="section-note" id="boardQuota"></span>
+    </div>
+    <p style="font-size:.85rem;color:var(--text-muted);margin-bottom:14px">
+      This ranks bets by <strong>how far a book's price sits from the sharp consensus</strong> — not by who
+      is likely to win. It uses no projection of your own. For every game it de-vigs the median of all
+      other books, backs out the number that implies, then re-prices each book at its own line. A stale
+      or generous book surfaces as +EV. Needs at least 4 books on a market to mean anything.
+    </p>
+    <div class="form-grid">
+      <div class="form-group">
+        <label>Picks per league</label>
+        <select id="boardCount">
+          <option value="3">Top 3</option>
+          <option value="5" selected>Top 5</option>
+          <option value="10">Top 10</option>
+          <option value="25">Top 25</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Minimum edge (%)</label>
+        <input id="boardMinEdge" type="number" step="0.25" value="1">
+        <span class="hint">Below ~1% the vig eats it</span>
+      </div>
+      <div class="form-group">
+        <label>&nbsp;</label>
+        <button class="btn-primary" id="boardFetch">Fetch both leagues</button>
+        <span class="hint">2 API requests</span>
+      </div>
+    </div>
+    <div class="form-actions">
+      <button class="btn-secondary" id="boardRescan">Rescan loaded slates</button>
+      <span class="status-line" id="boardStatus"></span>
+    </div>
+    <div class="callout" style="margin-top:16px">
+      <strong>Read this before betting off it</strong>
+      A price better than consensus is a real edge, but a small one — expect 1–3%, not 20%. It also
+      decays fast: stale lines get corrected, often within minutes. And a single book alone against the
+      field is sometimes right rather than slow, especially on news the others haven't priced yet. Check
+      why it's an outlier before you fire.
+    </div>
+  </div>
+  <div id="boardWrap"></div>
 </section>
 
 <!-- ============ SITUATIONAL ============ -->
@@ -532,6 +582,23 @@ function probToAmerican(p) {
   const d = 1/p;
   return d >= 2 ? '+' + Math.round((d - 1) * 100) : '−' + Math.round(100/(d - 1));
 }
+// Inverse normal CDF (Acklam's rational approximation, |error| < 1.15e-9).
+// Used to back a "true" margin or total out of a consensus probability.
+function invNormCdf(p) {
+  if (!(p > 0) || p >= 1) return 0;
+  const a = [-3.969683028665376e+1, 2.209460984245205e+2, -2.759285104469687e+2, 1.383577518672690e+2, -3.066479806614716e+1, 2.506628277459239e+0];
+  const b = [-5.447609879822406e+1, 1.615858368580409e+2, -1.556989798598866e+2, 6.680131188771972e+1, -1.328068155288572e+1];
+  const c = [-7.784894002430293e-3, -3.223964580411365e-1, -2.400758277161838e+0, -2.549732539343734e+0, 4.374664141464968e+0, 2.938163982698783e+0];
+  const d = [7.784695709041462e-3, 3.224671290700398e-1, 2.445134137142996e+0, 3.754408661907416e+0];
+  const pl = 0.02425, ph = 1 - pl;
+  let q, r;
+  if (p < pl) { q = Math.sqrt(-2*Math.log(p));
+    return (((((c[0]*q+c[1])*q+c[2])*q+c[3])*q+c[4])*q+c[5]) / ((((d[0]*q+d[1])*q+d[2])*q+d[3])*q+1); }
+  if (p > ph) { q = Math.sqrt(-2*Math.log(1-p));
+    return -(((((c[0]*q+c[1])*q+c[2])*q+c[3])*q+c[4])*q+c[5]) / ((((d[0]*q+d[1])*q+d[2])*q+d[3])*q+1); }
+  q = p - 0.5; r = q*q;
+  return (((((a[0]*r+a[1])*r+a[2])*r+a[3])*r+a[4])*r+a[5])*q / (((((b[0]*r+b[1])*r+b[2])*r+b[3])*r+b[4])*r+1);
+}
 function normCdf(z) {
   const b1=.319381530, b2=-.356563782, b3=1.781477937, b4=-1.821255978, b5=1.330274429, p0=.2316419;
   const az = Math.abs(z), t = 1/(1 + p0*az);
@@ -728,6 +795,126 @@ function evaluateRow(row, market, side, est, league, bankroll, kf) {
   const condProb = (p.win + p.lose) > 0 ? p.win / (p.win + p.lose) : 0;
   return { ...row, myProb: condProb, rawWin: p.win, pushProb: p.push, dec, ev, edge: ev,
            kelly, stake, breakeven, fairPrice: probToAmerican(condProb) };
+}
+
+/* ============================================================
+   Slate scan — find books priced away from the sharp consensus.
+
+   This uses no projection of our own. For each game/market/side we take the
+   de-vigged median across every OTHER book (leave-one-out, so a lone outlier
+   can't drag the consensus toward itself), back out the margin or total that
+   consensus implies, then re-price the book under test at its own line. A book
+   offering a better number or a better price than the field shows up as +EV.
+   ============================================================ */
+const MIN_BOOKS_FOR_CONSENSUS = 4;   // book under test + at least 3 others
+
+function marketConsensus(game, market, side, excludeBook) {
+  const quotes = collectQuotes(game, market, side).filter(q => q.book !== excludeBook);
+  if (quotes.length < MIN_BOOKS_FOR_CONSENSUS - 1) return null;
+  const L0 = market === 'h2h' ? 0 : modal(quotes.filter(q => q.line !== null).map(q => q.line));
+  const at = market === 'h2h' ? quotes : quotes.filter(q => q.line === L0);
+  if (at.length < 2) return null;
+  return { line: L0, prob: median(at.map(q => q.marketProb)), n: at.length, pool: quotes.length };
+}
+
+// The margin (or total) the consensus price implies, expressed in home terms.
+function impliedNumber(market, side, cons, league) {
+  const sd = market === 'totals'
+    ? (league === 'nfl' ? state.params.sdNflTotal : state.params.sdCfbTotal)
+    : (league === 'nfl' ? state.params.sdNflMargin : state.params.sdCfbMargin);
+  const z = invNormCdf(cons.prob);
+  if (market === 'totals') return side === 'home' ? cons.line + sd*z : cons.line - sd*z;
+  if (market === 'h2h')    return side === 'home' ? sd*z : -(sd*z);
+  const mSide = sd*z - cons.line;                       // spread, from the bet side's view
+  return side === 'home' ? mSide : -mSide;
+}
+
+function scanSlate(league, bankroll, kf, minEdge) {
+  const bestPerBet = new Map();
+  (state.games[league] || []).forEach(game => {
+    ['spreads', 'totals', 'h2h'].forEach(market => {
+      ['home', 'away'].forEach(side => {
+        const quotes = collectQuotes(game, market, side);
+        if (quotes.length < MIN_BOOKS_FOR_CONSENSUS) return;
+        quotes.forEach(q => {
+          const cons = marketConsensus(game, market, side, q.book);
+          if (!cons) return;
+          const est = impliedNumber(market, side, cons, league);
+          const row = evaluateRow(q, market, side, est, league, bankroll, kf);
+          if (row.ev < minEdge) return;
+          // Keep only the single best book per distinct bet.
+          const key = `${game.id}|${market}|${side}`;
+          const prev = bestPerBet.get(key);
+          if (!prev || row.ev > prev.row.ev) {
+            bestPerBet.set(key, { game, market, side, league, row, cons, est, books: quotes.length });
+          }
+        });
+      });
+    });
+  });
+  return [...bestPerBet.values()].sort((a, b) => b.row.ev - a.row.ev);
+}
+
+function betLabel(o) {
+  const g = o.game;
+  if (o.market === 'totals') return `${o.side === 'home' ? 'Over' : 'Under'} ${Math.abs(o.row.line)}`;
+  const team = o.side === 'home' ? g.home_team : g.away_team;
+  return o.market === 'h2h' ? `${team} ML` : `${team} ${fmtLine(o.row.line)}`;
+}
+
+function renderBoard() {
+  const n = parseInt($('boardCount').value, 10);
+  const minEdge = parseFloat($('boardMinEdge').value) / 100;
+  const bankroll = parseFloat($('bankroll').value) || 0;
+  const kf = parseFloat($('kellyFrac').value);
+  const wrap = $('boardWrap');
+
+  const blocks = ['nfl', 'cfb'].map(lg => {
+    const loaded = (state.games[lg] || []).length;
+    const label = lg === 'nfl' ? 'NFL' : 'College football';
+    if (!loaded) {
+      return `<div class="section">
+        <div class="section-title"><span>${label}</span><span class="section-note">no slate loaded</span></div>
+        <div class="empty-state">Switch to ${lg.toUpperCase()} on the Calibrator tab and fetch odds, or use “Fetch both leagues” above.</div>
+      </div>`;
+    }
+    const hits = scanSlate(lg, bankroll, kf, minEdge).slice(0, n);
+    if (!hits.length) {
+      return `<div class="section">
+        <div class="section-title"><span>${label}</span><span class="section-note">${loaded} games scanned</span></div>
+        <div class="empty-state">No book is priced away from the consensus by more than ${pct(minEdge)} right now.<br>
+        That is the normal result on an efficient board — it means pass, not broken.</div>
+      </div>`;
+    }
+    return `<div class="section">
+      <div class="section-title">
+        <span>${label} — top ${hits.length}</span>
+        <span class="section-note">${loaded} games scanned · ranked by price vs. consensus</span>
+      </div>
+      <div class="table-wrap"><table>
+        <thead><tr>
+          <th>#</th><th>Matchup</th><th>Bet</th><th>Book</th>
+          <th class="num">Price</th><th class="num">Consensus</th><th class="num">Fair</th>
+          <th class="num">Edge</th><th class="num">Stake</th><th class="num">Books</th>
+        </tr></thead>
+        <tbody>${hits.map((o, i) => `
+          <tr class="${i === 0 ? 'best' : ''}">
+            <td>${i + 1}</td>
+            <td>${o.game.away_team} @ ${o.game.home_team}</td>
+            <td><strong>${betLabel(o)}</strong></td>
+            <td>${o.row.book}</td>
+            <td class="num">${fmtPrice(o.row.price)}</td>
+            <td class="num" style="color:var(--text-muted)">${o.market === 'h2h' ? '' : (o.market === 'totals' ? Math.abs(o.cons.line) : fmtLine(o.cons.line)) + ' '}${probToAmerican(o.cons.prob)}</td>
+            <td class="num">${o.row.fairPrice}</td>
+            <td class="num pos">+${pct(o.row.ev)}</td>
+            <td class="num">$${o.row.stake.toFixed(0)}</td>
+            <td class="num" style="color:var(--text-muted)">${o.books}</td>
+          </tr>`).join('')}</tbody>
+      </table></div>
+    </div>`;
+  });
+
+  wrap.innerHTML = blocks.join('');
 }
 
 function render() {
@@ -1134,6 +1321,29 @@ function init() {
     populateGames();
   });
 
+  $('boardFetch').addEventListener('click', async () => {
+    const keep = state.league;
+    $('boardFetch').disabled = true;
+    $('boardStatus').textContent = 'Fetching NFL…';
+    $('boardStatus').className = 'status-line';
+    for (const lg of ['nfl', 'cfb']) {
+      state.league = lg;
+      $('boardStatus').textContent = `Fetching ${lg.toUpperCase()}…`;
+      await fetchOdds();
+    }
+    state.league = keep;
+    setLeague(keep);
+    $('boardFetch').disabled = false;
+    const n = (state.games.nfl || []).length, c = (state.games.cfb || []).length;
+    $('boardStatus').textContent = `Loaded ${n} NFL and ${c} CFB games.`;
+    $('boardStatus').className = 'status-line ' + (n + c ? 'ok' : 'err');
+    $('boardQuota').textContent = $('quotaNote').textContent;
+    renderBoard();
+  });
+  $('boardRescan').addEventListener('click', renderBoard);
+  $('boardCount').addEventListener('change', renderBoard);
+  $('boardMinEdge').addEventListener('input', renderBoard);
+
   $('gameSel').addEventListener('change', render);
   $('marketSel').addEventListener('change', () => { setMarketUI(); render(); });
   $('sideSel').addEventListener('change', render);
@@ -1184,6 +1394,7 @@ function init() {
   setLeague(state.league);
   updateLeanLabel();
   render();
+  renderBoard();
 }
 
 init();
