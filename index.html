@@ -511,6 +511,31 @@
 
   <div class="section">
     <div class="section-title">
+      <span>Quota cycle</span>
+      <span class="section-note">the API never reports its reset date — this works it out</span>
+    </div>
+    <div id="quotaCycle"></div>
+    <div id="cycleWarn"></div>
+    <div class="form-grid" style="margin-top:16px">
+      <div class="form-group">
+        <label>Reset day of month</label>
+        <input id="resetDayInput" type="number" min="1" max="31" placeholder="e.g. 12">
+        <span class="hint">From your the-odds-api.com dashboard</span>
+      </div>
+      <div class="form-group">
+        <label>&nbsp;</label>
+        <button class="btn-secondary" id="saveResetDay">Set reset day</button>
+      </div>
+      <div class="form-group">
+        <label>&nbsp;</label>
+        <button class="btn-secondary" id="clearResetDay">Forget it</button>
+      </div>
+    </div>
+    <span class="status-line" id="resetDayStatus"></span>
+  </div>
+
+  <div class="section">
+    <div class="section-title">
       <span>Cached slates</span>
       <span class="section-note">stored locally · costs nothing to reuse</span>
     </div>
@@ -640,7 +665,9 @@ let state = {
   ratings: {},
   params: { ...DEFAULT_PARAMS },
   lean: { pts: 0, side: 'home', label: '' },
-  card: []
+  card: [],
+  quota: { resetDay: null, autoDetected: false, detectedAt: null,
+           lastUsed: null, lastRemaining: null, lastSeenAt: null, headersVisible: false }
 };
 FACTORS.forEach(f => state.ratings[f.id] = 0);
 
@@ -723,6 +750,110 @@ function selectedMarkets() {
 function regionCount() { return store.get('regions', 'us').split(',').length; }
 function creditsPerLeague() { return selectedMarkets().length * regionCount(); }
 
+/* ============================================================
+   Quota cycle tracking.
+
+   The API reports credits used and remaining but never says when the cycle resets.
+   So watch x-requests-used across fetches: when it falls, the quota just reset, and
+   that date is the reset day. After one cycle the app knows it without being told.
+   ============================================================ */
+const FREE_TIER = 500;
+
+function daysInMonth(y, m) { return new Date(y, m + 1, 0).getDate(); }
+function atDay(y, m, day) { return new Date(y, m, Math.min(day, daysInMonth(y, m))); }
+function startOfToday() { const d = new Date(); d.setHours(0,0,0,0); return d; }
+
+function nextResetDate(day) {
+  const now = startOfToday();
+  let d = atDay(now.getFullYear(), now.getMonth(), day);
+  if (d <= now) d = atDay(now.getFullYear(), now.getMonth() + 1, day);
+  return d;
+}
+function cycleStartDate(day) {
+  const now = startOfToday();
+  let d = atDay(now.getFullYear(), now.getMonth(), day);
+  if (d > now) d = atDay(now.getFullYear(), now.getMonth() - 1, day);
+  return d;
+}
+function daysBetween(a, b) { return Math.round((b - a) / 86400000); }
+
+// Called after every fetch with whatever the response headers gave us.
+function recordQuota(usedHdr, remainHdr) {
+  const q = state.quota;
+  const used = usedHdr === null ? null : Number(usedHdr);
+  const remain = remainHdr === null ? null : Number(remainHdr);
+  const todayISO = startOfToday().toISOString().slice(0, 10);
+
+  if (used !== null && !isNaN(used)) {
+    // A drop in cumulative usage means the cycle rolled over.
+    if (q.lastUsed !== null && used < q.lastUsed) {
+      q.resetDay = new Date().getDate();
+      q.detectedAt = todayISO;
+      q.autoDetected = true;
+    }
+    q.lastUsed = used;
+  }
+  if (remain !== null && !isNaN(remain)) q.lastRemaining = remain;
+  q.lastSeenAt = todayISO;
+  q.headersVisible = used !== null || remain !== null;
+  store.set('quota2', q);
+}
+
+function quotaSummary() {
+  const q = state.quota;
+  const remaining = q.lastRemaining !== null ? q.lastRemaining
+                  : (q.lastUsed !== null ? FREE_TIER - q.lastUsed : null);
+  const used = q.lastUsed !== null ? q.lastUsed
+             : (remaining !== null ? FREE_TIER - remaining : store.get('spent', 0));
+  if (!q.resetDay) return { remaining, used, known: false };
+
+  const start = cycleStartDate(q.resetDay), next = nextResetDate(q.resetDay);
+  const elapsed = Math.max(1, daysBetween(start, startOfToday()));
+  const left = daysBetween(startOfToday(), next);
+  const perDay = used / elapsed;
+  const projected = perDay * left;
+  return { remaining, used, known: true, start, next, elapsed, left, perDay, projected,
+           willRunOut: remaining !== null && projected > remaining };
+}
+
+function renderQuotaCycle() {
+  if (!$('quotaCycle')) return;
+  const q = state.quota, s = quotaSummary();
+  const fmtD = d => d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+
+  const rows = [];
+  rows.push(`<div class="kv"><span class="kv-label">Reset day</span><span class="kv-val">${
+    q.resetDay ? `${q.resetDay}${['th','st','nd','rd'][(q.resetDay%10>3||(q.resetDay%100>=11&&q.resetDay%100<=13))?0:q.resetDay%10]} of the month${q.autoDetected ? ' · auto-detected' : ' · set manually'}`
+               : 'not known yet'}</span></div>`);
+  if (s.known) {
+    rows.push(`<div class="kv"><span class="kv-label">Next reset</span><span class="kv-val">${fmtD(s.next)} · ${s.left} day${s.left === 1 ? '' : 's'} away</span></div>`);
+    rows.push(`<div class="kv"><span class="kv-label">Used this cycle</span><span class="kv-val">${s.used} credits over ${s.elapsed} day${s.elapsed === 1 ? '' : 's'} · ${s.perDay.toFixed(1)}/day</span></div>`);
+  } else {
+    rows.push(`<div class="kv"><span class="kv-label">Used</span><span class="kv-val">${s.used} credits${q.headersVisible ? '' : ' (counted locally — headers not readable)'}</span></div>`);
+  }
+  rows.push(`<div class="kv"><span class="kv-label">Remaining</span><span class="kv-val">${
+    s.remaining !== null ? `${s.remaining} credits` : 'unknown until first fetch'}</span></div>`);
+  if (s.known) {
+    rows.push(`<div class="kv"><span class="kv-label">Projected by reset</span><span class="kv-val ${s.willRunOut ? 'neg' : 'pos'}">${
+      Math.round(s.projected)} more at this rate</span></div>`);
+  }
+  $('quotaCycle').innerHTML = rows.join('');
+
+  $('cycleWarn').innerHTML = !s.known
+    ? `<div class="callout info"><strong>Learning your cycle</strong>
+       The API never reports its reset date, so the app watches for credits used to drop — that's the
+       reset. It'll detect the day on its own within one cycle, or you can set it now from your
+       dashboard at the-odds-api.com.</div>`
+    : s.willRunOut
+      ? `<div class="callout"><strong>On pace to run out before ${fmtD(s.next)}</strong>
+         You're using ${s.perDay.toFixed(1)} credits/day with ${s.remaining} left and ${s.left} days to go.
+         Drop a market on the Settings tab, lean on cached slates, or expect to be on manual entry
+         before the reset.</div>`
+      : `<div class="callout info"><strong>Comfortable</strong>
+         At ${s.perDay.toFixed(1)} credits/day you'll use about ${Math.round(s.projected)} more before
+         ${fmtD(s.next)}, against ${s.remaining} remaining.</div>`;
+}
+
 function cacheAge(league) {
   const c = store.get('cache_' + league, null);
   if (!c || !c.ts) return null;
@@ -756,10 +887,13 @@ function updateCostNote() {
   $('costNote').textContent =
     `${selectedMarkets().join(', ')} · ${c} credit${c === 1 ? '' : 's'} per league`
     + (age === null ? '' : ` · cached slate ${describeAge(age)}`);
-  $('quotaNote').textContent = store.get('quota', null) !== null
-    ? `${store.get('quota', null)} credits left`
+  const s = quotaSummary();
+  $('quotaNote').textContent = s.remaining !== null
+    ? `${s.remaining} credits left${s.known ? ` · resets in ${s.left}d` : ''}`
     : (spent ? `${spent} credits used this session` : '');
+  $('quotaNote').style.color = (s.known && s.willRunOut) ? 'var(--warn)' : '';
   if ($('boardCost')) $('boardCost').textContent = `${c * 2} credits`;
+  renderQuotaCycle();
 }
 
 async function fetchOdds() {
@@ -784,6 +918,7 @@ async function fetchOdds() {
     const used = res.headers.get('x-requests-used');
     if (remain !== null) store.set('quota', remain);
     if (used === null) store.set('spent', store.get('spent', 0) + creditsPerLeague());
+    recordQuota(used, remain);
     if (!res.ok) {
       const txt = await res.text();
       throw new Error(res.status === 401 ? 'Key rejected (401). Check it on the Settings tab.'
@@ -1789,6 +1924,8 @@ function init() {
   state.lean = store.get('lean', state.lean);
   state.league = store.get('league', 'nfl');
   state.card = store.get('card', []);
+  state.quota = Object.assign({}, state.quota, store.get('quota2', {}));
+  if (state.quota.resetDay) $('resetDayInput').value = state.quota.resetDay;
   Object.keys(DEFAULT_PARAMS).forEach(k => { if ($(k)) $(k).value = state.params[k]; });
   $('apiKey').value = store.get('apiKey', '');
   $('regionSel').value = store.get('regions', 'us');
@@ -1886,6 +2023,28 @@ function init() {
     syncMktCost();
   }));
   $('regionSel').addEventListener('change', syncMktCost);
+
+  $('saveResetDay').addEventListener('click', () => {
+    const d = parseInt($('resetDayInput').value, 10);
+    if (!(d >= 1 && d <= 31)) {
+      $('resetDayStatus').textContent = 'Enter a day between 1 and 31.';
+      $('resetDayStatus').className = 'status-line err'; return;
+    }
+    state.quota.resetDay = d;
+    state.quota.autoDetected = false;
+    store.set('quota2', state.quota);
+    renderQuotaCycle(); updateCostNote();
+    $('resetDayStatus').textContent = `Reset day set to the ${d}${['th','st','nd','rd'][(d%10>3||(d%100>=11&&d%100<=13))?0:d%10]}.`;
+    $('resetDayStatus').className = 'status-line ok';
+  });
+  $('clearResetDay').addEventListener('click', () => {
+    state.quota.resetDay = null; state.quota.autoDetected = false;
+    store.set('quota2', state.quota);
+    $('resetDayInput').value = '';
+    renderQuotaCycle(); updateCostNote();
+    $('resetDayStatus').textContent = 'Cleared — will auto-detect at the next reset.';
+    $('resetDayStatus').className = 'status-line';
+  });
 
   $('clearCache').addEventListener('click', () => {
     ['nfl', 'cfb'].forEach(lg => { localStorage.removeItem('ge_cache_' + lg); state.games[lg] = []; });
