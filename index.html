@@ -168,6 +168,18 @@
 
   .disclaimer { font-size: .74rem; color: var(--text-muted); text-align: center; margin-top: 34px; line-height: 1.6; }
 
+  @media print {
+    header, .tabs, .no-print, .export-row, .del-btn, [data-add] { display: none !important; }
+    body { background: #fff; color: #000; font-size: 12px; }
+    .panel { display: none !important; }
+    .panel.active { display: block !important; }
+    .section, .stat-card, .callout { border: 1px solid #ccc !important; background: #fff !important;
+      break-inside: avoid; page-break-inside: avoid; }
+    main { max-width: 100%; padding: 0; }
+    .stats-row { grid-template-columns: repeat(4, 1fr); }
+    a[href]:after { content: ''; }
+  }
+
   @media (max-width: 780px) {
     .stats-row { grid-template-columns: 1fr 1fr; }
     .form-grid, .form-grid.two { grid-template-columns: 1fr; }
@@ -198,6 +210,7 @@
 <nav class="tabs">
   <button class="tab active" data-panel="calibrator">Calibrator</button>
   <button class="tab" data-panel="board">Best Board</button>
+  <button class="tab" data-panel="planner">Slate Planner</button>
   <button class="tab" data-panel="situational">Situational Scorer</button>
   <button class="tab" data-panel="settings">Settings</button>
 </nav>
@@ -359,6 +372,21 @@
     </div>
   </div>
   <div id="boardWrap"></div>
+</section>
+
+<!-- ============ SLATE PLANNER ============ -->
+<section class="panel" id="panel-planner">
+  <div class="section no-print">
+    <div class="section-title"><span>Weekly slate planner</span></div>
+    <p style="font-size:.85rem;color:var(--text-muted)">
+      Every stake elsewhere in this app is sized as though that bet is your only exposure. It isn't.
+      This sizes the whole card at once — solving for the stakes that maximise expected log growth
+      across all of them together — and resolves bets on the same game from a single simulated game,
+      so a team's spread and its moneyline correlate properly instead of pretending to be independent.
+      Uses your bankroll and Kelly fraction from the Calibrator tab.
+    </p>
+  </div>
+  <div id="plannerWrap"></div>
 </section>
 
 <!-- ============ SITUATIONAL ============ -->
@@ -611,7 +639,8 @@ let state = {
   manualGame: null,
   ratings: {},
   params: { ...DEFAULT_PARAMS },
-  lean: { pts: 0, side: 'home', label: '' }
+  lean: { pts: 0, side: 'home', label: '' },
+  card: []
 };
 FACTORS.forEach(f => state.ratings[f.id] = 0);
 
@@ -931,7 +960,10 @@ function evaluateRow(row, market, side, est, league, bankroll, kf) {
   const dec = americanToDecimal(row.price);
   const b = dec - 1;
   const ev = p.win * b - p.lose;                 // per $1 staked (a push returns the stake, EV 0)
-  const kelly = b > 0 ? ev / b : 0;
+  // Kelly with three outcomes. f = EV/b only holds when the bet cannot push; a push
+  // returns the stake, so the optimal fraction scales up by 1/(1 - P_push).
+  const action = p.win + p.lose;
+  const kelly = (b > 0 && action > 0) ? ev / (b * action) : 0;
   const stake = Math.max(0, kelly * kf * bankroll);
   const breakeven = 1 / dec;
   // Probability conditional on the bet actually resolving. This is the number that is
@@ -1032,9 +1064,11 @@ function renderBoard() {
   const kf = parseFloat($('kellyFrac').value);
   const wrap = $('boardWrap');
 
+  const lists = {};
   const blocks = ['nfl', 'cfb'].map(lg => {
     const loaded = (state.games[lg] || []).length;
     const label = lg === 'nfl' ? 'NFL' : 'College football';
+    lists[lg] = [];
     if (!loaded) {
       return `<div class="section">
         <div class="section-title"><span>${label}</span><span class="section-note">no slate loaded</span></div>
@@ -1042,6 +1076,7 @@ function renderBoard() {
       </div>`;
     }
     const hits = scanSlate(lg, bankroll, kf, minEdge).slice(0, n);
+    lists[lg] = hits;
     if (!hits.length) {
       return `<div class="section">
         <div class="section-title"><span>${label}</span><span class="section-note">${loaded} games scanned</span></div>
@@ -1058,7 +1093,7 @@ function renderBoard() {
         <thead><tr>
           <th>#</th><th>Matchup</th><th>Bet</th><th>Book</th>
           <th class="num">Price</th><th class="num">Consensus</th><th class="num">Fair</th>
-          <th class="num">Edge</th><th class="num">Stake</th><th class="num">Books</th>
+          <th class="num">Edge</th><th class="num">Stake</th><th class="num">Books</th><th></th>
         </tr></thead>
         <tbody>${hits.map((o, i) => `
           <tr class="${i === 0 ? 'best' : ''}">
@@ -1072,12 +1107,306 @@ function renderBoard() {
             <td class="num pos">+${pct(o.row.ev)}</td>
             <td class="num">$${o.row.stake.toFixed(0)}</td>
             <td class="num" style="color:var(--text-muted)">${o.books}</td>
+            <td><button class="btn-secondary" style="padding:3px 10px;font-size:.78rem"
+                  data-add="${lg}|${i}">Add</button></td>
           </tr>`).join('')}</tbody>
       </table></div>
     </div>`;
   });
 
   wrap.innerHTML = blocks.join('');
+
+  wrap.querySelectorAll('[data-add]').forEach(btn => {
+    const [lg, idx] = btn.dataset.add.split('|');
+    const o = lists[lg][+idx];
+    if (!o) return;
+    btn.addEventListener('click', () => {
+      const ok = addToCard({
+        league: o.league, gameKey: gameKeyOf(o.game), away: o.game.away_team, home: o.game.home_team,
+        market: o.market, side: o.side, line: o.market === 'h2h' ? 0 : o.row.line,
+        price: o.row.price, book: o.row.book, est: o.est, label: betLabel(o)
+      });
+      btn.textContent = ok ? 'Added' : 'On card';
+      btn.disabled = true;
+    });
+  });
+}
+
+/* ============================================================
+   Slate planner — size a whole card at once.
+
+   Per-bet Kelly assumes the bet is your only exposure. Sum eight of them and you
+   are meaningfully over-staked, because every extra bet competes for the same
+   bankroll. This simulates the full slate and solves for the stake vector that
+   maximises expected log wealth across all of them together.
+
+   Bets on the same game are resolved from a single simulated game — one margin,
+   one total — so a team's spread and its moneyline correlate exactly rather than
+   being treated as independent coin flips.
+   ============================================================ */
+const SIM_N = 10000;
+
+function gameKeyOf(g) { return g.id || `${g.away_team}@${g.home_team}`; }
+
+function cardProbs(b) {
+  const p = myProbAt(b.market === 'h2h' ? 0 : b.line, b.market, b.side, b.est, b.league);
+  const dec = americanToDecimal(b.price);
+  const cond = (p.win + p.lose) > 0 ? p.win / (p.win + p.lose) : 0;
+  const ev = p.win * (dec - 1) - p.lose;
+  const action = p.win + p.lose;
+  return { ...p, dec, b: dec - 1, cond, ev,
+           kelly: (dec > 1 && action > 0) ? ev / ((dec - 1) * action) : 0 };
+}
+
+function gaussian() {
+  let u = 0, v = 0;
+  while (u === 0) u = Math.random();
+  while (v === 0) v = Math.random();
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+}
+
+// Returns a Float64Array of size nSims*n holding each bet's return per unit staked.
+function buildReturnMatrix(card, nSims) {
+  const n = card.length;
+  const R = new Float64Array(nSims * n);
+
+  // Group bets by game so one simulated game resolves all of them.
+  const byGame = new Map();
+  card.forEach((b, i) => {
+    if (!byGame.has(b.gameKey)) byGame.set(b.gameKey, []);
+    byGame.get(b.gameKey).push(i);
+  });
+
+  byGame.forEach(idxs => {
+    const any = card[idxs[0]];
+    const lg = any.league;
+    const sdM = lg === 'nfl' ? state.params.sdNflMargin : state.params.sdCfbMargin;
+    const sdT = lg === 'nfl' ? state.params.sdNflTotal  : state.params.sdCfbTotal;
+    // Projected home margin and total for this game, from whichever bets carry them.
+    const spreadBet = idxs.map(i => card[i]).find(b => b.market !== 'totals');
+    const totalBet  = idxs.map(i => card[i]).find(b => b.market === 'totals');
+    // est is always stored in home-margin terms, and `margin` below is the home margin,
+    // so it is used as-is here — flipping for the away side happens at resolution time.
+    const muM = spreadBet ? spreadBet.est : 0;
+    const muT = totalBet ? totalBet.est : 44;
+
+    const { ks, ws } = marginPmf(muM, sdM, lg);
+    const cum = new Float64Array(ws.length);
+    let acc = 0;
+    for (let i = 0; i < ws.length; i++) { acc += ws[i]; cum[i] = acc; }
+
+    for (let s = 0; s < nSims; s++) {
+      // One game outcome, shared by every bet on it.
+      const u = Math.random();
+      let lo = 0, hi = cum.length - 1;
+      while (lo < hi) { const mid = (lo + hi) >> 1; if (cum[mid] < u) lo = mid + 1; else hi = mid; }
+      const margin = ks[lo];                                   // home margin
+      const total = Math.round(muT + gaussian() * sdT);
+
+      idxs.forEach(i => {
+        const bet = card[i];
+        let v;
+        if (bet.market === 'totals') {
+          v = (bet.side === 'home' ? 1 : -1) * (total - bet.line);
+        } else {
+          const m = bet.side === 'home' ? margin : -margin;
+          v = m + (bet.market === 'h2h' ? 0 : bet.line);
+        }
+        const dec = americanToDecimal(bet.price);
+        R[s * n + i] = v > 1e-9 ? dec - 1 : (v < -1e-9 ? -1 : 0);
+      });
+    }
+  });
+  return R;
+}
+
+// Gradient ascent on E[log(1 + sum f_i r_i)]. Stakes are non-negative.
+function optimiseStakes(R, nSims, n) {
+  const f = new Float64Array(n).fill(0.005);
+  const grad = new Float64Array(n);
+  let lr = 0.4;
+  for (let it = 0; it < 300; it++) {
+    grad.fill(0);
+    for (let s = 0; s < nSims; s++) {
+      const off = s * n;
+      let w = 1;
+      for (let i = 0; i < n; i++) w += f[i] * R[off + i];
+      if (w < 1e-4) w = 1e-4;
+      for (let i = 0; i < n; i++) grad[i] += R[off + i] / w;
+    }
+    let maxStep = 0;
+    for (let i = 0; i < n; i++) {
+      const g = grad[i] / nSims;
+      const step = lr * g;
+      f[i] = Math.max(0, f[i] + step);
+      if (Math.abs(step) > maxStep) maxStep = Math.abs(step);
+    }
+    if (maxStep < 1e-6) break;
+    lr *= 0.995;
+  }
+  return f;
+}
+
+// Outcome distribution for a given stake vector, as a fraction of bankroll.
+function slateOutcomes(R, nSims, n, stakes) {
+  const out = new Float64Array(nSims);
+  for (let s = 0; s < nSims; s++) {
+    const off = s * n;
+    let p = 0;
+    for (let i = 0; i < n; i++) p += stakes[i] * R[off + i];
+    out[s] = p;
+  }
+  return out;
+}
+function quantile(sorted, q) {
+  if (!sorted.length) return 0;
+  const i = Math.min(sorted.length - 1, Math.max(0, Math.floor(q * (sorted.length - 1))));
+  return sorted[i];
+}
+
+function correlationFlags(card) {
+  const flags = [];
+  const byGame = new Map();
+  card.forEach(b => {
+    if (!byGame.has(b.gameKey)) byGame.set(b.gameKey, []);
+    byGame.get(b.gameKey).push(b);
+  });
+  byGame.forEach((bets, k) => {
+    if (bets.length > 1) {
+      const g = bets[0];
+      flags.push(`<strong>${g.away} @ ${g.home}</strong> carries ${bets.length} bets (${bets.map(b => b.label).join(', ')}). These resolve off one game — sized together below, but a bad afternoon hits all of them at once.`);
+    }
+  });
+  const overs = card.filter(b => b.market === 'totals' && b.side === 'home').length;
+  const unders = card.filter(b => b.market === 'totals' && b.side === 'away').length;
+  if (overs >= 3) flags.push(`<strong>${overs} overs on the card.</strong> Totals move together with league-wide scoring and weather more than they look like they should.`);
+  if (unders >= 3) flags.push(`<strong>${unders} unders on the card.</strong> Same warning in reverse — a high-scoring week takes all of them down together.`);
+  const favs = card.filter(b => b.market !== 'totals' && b.line < 0).length;
+  if (favs >= 5) flags.push(`<strong>${favs} favourites laid.</strong> Not correlated in the strict sense, but it is the same bet shape repeated, and it's how a card quietly becomes one big position.`);
+  return flags;
+}
+
+function renderPlanner() {
+  const wrap = $('plannerWrap');
+  const card = state.card;
+  const bankroll = parseFloat($('bankroll').value) || 0;
+  const kf = parseFloat($('kellyFrac').value);
+
+  if (!card.length) {
+    wrap.innerHTML = `<div class="section"><div class="empty-state">
+      Your card is empty.<br><br>Add bets from the <strong>Calibrator</strong> (the “Add to card” button under the verdict)
+      or straight from the <strong>Best Board</strong>.</div></div>`;
+    return;
+  }
+
+  const n = card.length;
+  const info = card.map(cardProbs);
+  const R = buildReturnMatrix(card, SIM_N);
+  const fRaw = optimiseStakes(R, SIM_N, n);
+
+  // Apply the user's Kelly fraction to the co-optimal solution.
+  const stakes = Array.from(fRaw, x => x * kf);
+  const naive  = info.map(p => Math.max(0, p.kelly) * kf);
+  const totalOpt = stakes.reduce((a, b) => a + b, 0);
+  const totalNaive = naive.reduce((a, b) => a + b, 0);
+
+  const outcomes = slateOutcomes(R, SIM_N, n, stakes);
+  const sorted = Float64Array.from(outcomes).sort();
+  const mean = outcomes.reduce((a, b) => a + b, 0) / SIM_N;
+  const pLose = outcomes.reduce((a, v) => a + (v < 0 ? 1 : 0), 0) / SIM_N;
+  const p05 = quantile(sorted, 0.05), p95 = quantile(sorted, 0.95);
+  const worst = card.reduce((a, b, i) => a - stakes[i], 0);
+
+  const flags = correlationFlags(card);
+
+  wrap.innerHTML = `
+    <div class="stats-row">
+      <div class="stat-card">
+        <div class="stat-label">Total at risk</div>
+        <div class="stat-value">$${(totalOpt * bankroll).toFixed(0)}</div>
+        <div class="stat-sub">${pct(totalOpt)} of bankroll · ${n} bet${n === 1 ? '' : 's'}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Expected</div>
+        <div class="stat-value ${mean >= 0 ? 'pos' : 'neg'}">${mean >= 0 ? '+' : '−'}$${Math.abs(mean * bankroll).toFixed(0)}</div>
+        <div class="stat-sub">${mean >= 0 ? '+' : '−'}${pct(Math.abs(mean))} of bankroll</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Losing week</div>
+        <div class="stat-value">${pct(pLose, 0)}</div>
+        <div class="stat-sub">chance the card finishes down</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Realistic range</div>
+        <div class="stat-value" style="font-size:1.05rem">−$${Math.abs(p05 * bankroll).toFixed(0)} … +$${(p95 * bankroll).toFixed(0)}</div>
+        <div class="stat-sub">90% of outcomes · worst −$${Math.abs(worst * bankroll).toFixed(0)}</div>
+      </div>
+    </div>
+
+    ${totalNaive > totalOpt * 1.05 ? `
+      <div class="callout"><strong>Simultaneous sizing cut your exposure ${pct((totalNaive - totalOpt) / totalNaive, 0)}</strong>
+      Sizing each of these on its own would put $${(totalNaive * bankroll).toFixed(0)} at risk
+      (${pct(totalNaive)} of bankroll). Sized as one card it's $${(totalOpt * bankroll).toFixed(0)}.
+      The difference is the over-betting you'd never see betting one game at a time.</div>` : ''}
+
+    ${flags.length ? `<div class="callout"><strong>Correlated exposure</strong>${flags.map(f => `<div style="margin-top:6px">${f}</div>`).join('')}</div>` : ''}
+
+    <div class="section">
+      <div class="section-title">
+        <span>The card</span>
+        <span class="section-note">sized together, not one at a time</span>
+      </div>
+      <div class="table-wrap"><table>
+        <thead><tr>
+          <th>Matchup</th><th>Bet</th><th>Book</th>
+          <th class="num">Price</th><th class="num">Win prob</th><th class="num">Edge</th>
+          <th class="num">Solo</th><th class="num">Sized</th><th></th>
+        </tr></thead>
+        <tbody>${card.map((b, i) => `
+          <tr>
+            <td>${b.away} @ ${b.home} <span class="pill ${b.league}">${b.league.toUpperCase()}</span></td>
+            <td><strong>${b.label}</strong></td>
+            <td>${b.book}</td>
+            <td class="num">${fmtPrice(b.price)}</td>
+            <td class="num">${pct(info[i].cond)}</td>
+            <td class="num ${info[i].ev >= 0 ? 'pos' : 'neg'}">${info[i].ev >= 0 ? '+' : '−'}${pct(Math.abs(info[i].ev))}</td>
+            <td class="num" style="color:var(--text-muted)">$${(naive[i] * bankroll).toFixed(0)}</td>
+            <td class="num"><strong>$${(stakes[i] * bankroll).toFixed(0)}</strong></td>
+            <td><button class="del-btn" data-drop="${b.id}" title="Remove">✕</button></td>
+          </tr>`).join('')}</tbody>
+      </table></div>
+      <div class="export-row">
+        <button class="btn-secondary" id="printCard">Print card</button>
+        <button class="btn-secondary" id="clearCard">Clear card</button>
+      </div>
+    </div>`;
+
+  wrap.querySelectorAll('[data-drop]').forEach(btn =>
+    btn.addEventListener('click', () => dropFromCard(btn.dataset.drop)));
+  $('printCard').addEventListener('click', () => window.print());
+  $('clearCard').addEventListener('click', () => {
+    state.card = []; store.set('card', state.card); renderPlanner(); updateCardCount();
+  });
+}
+
+function addToCard(entry) {
+  entry.id = `${entry.gameKey}|${entry.market}|${entry.side}`;
+  if (state.card.some(b => b.id === entry.id)) return false;
+  state.card.push(entry);
+  store.set('card', state.card);
+  updateCardCount();
+  renderPlanner();
+  return true;
+}
+function dropFromCard(id) {
+  state.card = state.card.filter(b => b.id !== id);
+  store.set('card', state.card);
+  updateCardCount();
+  renderPlanner();
+}
+function updateCardCount() {
+  const t = document.querySelector('.tab[data-panel="planner"]');
+  if (t) t.textContent = state.card.length ? `Slate Planner (${state.card.length})` : 'Slate Planner';
 }
 
 function render() {
@@ -1163,8 +1492,10 @@ function render() {
     <div class="verdict ${cls}">
       <div class="verdict-tag">${tag}</div>
       <div class="verdict-body">
-        <strong>${sideName}${market === 'h2h' ? ' ML' : market === 'totals' ? ' ' + fmtLine(best.line) : ' ' + fmtLine(best.line)}</strong>
+        <strong>${sideName}${market === 'h2h' ? ' ML' : market === 'totals' ? ' ' + Math.abs(best.line) : ' ' + fmtLine(best.line)}</strong>
         at ${fmtPrice(best.price)} &mdash; ${best.book}<br>${msg}
+        <div style="margin-top:10px"><button class="btn-secondary" id="addCardBtn">Add to card</button>
+        <span class="status-line" id="addCardStatus"></span></div>
       </div>
     </div>
 
@@ -1257,6 +1588,19 @@ function render() {
         don't, or your projected ${market === 'totals' ? 'total' : 'margin'} is off. Check the input before you check the edge.</div>` : ''}
     </div>
   `;
+
+  $('addCardBtn').addEventListener('click', () => {
+    const ok = addToCard({
+      league, gameKey: gameKeyOf(game), away: game.away_team, home: game.home_team,
+      market, side, line: market === 'h2h' ? 0 : best.line, price: best.price,
+      book: best.book, est,
+      label: market === 'totals' ? `${sideName} ${Math.abs(best.line)}`
+           : market === 'h2h'    ? `${sideName} ML`
+           : `${sideName} ${fmtLine(best.line)}`
+    });
+    $('addCardStatus').textContent = ok ? 'Added to the card.' : 'Already on the card.';
+    $('addCardStatus').className = 'status-line ' + (ok ? 'ok' : '');
+  });
 }
 
 /* ============================================================
@@ -1444,6 +1788,7 @@ function init() {
   state.ratings = Object.assign({}, state.ratings, store.get('ratings', {}));
   state.lean = store.get('lean', state.lean);
   state.league = store.get('league', 'nfl');
+  state.card = store.get('card', []);
   Object.keys(DEFAULT_PARAMS).forEach(k => { if ($(k)) $(k).value = state.params[k]; });
   $('apiKey').value = store.get('apiKey', '');
   $('regionSel').value = store.get('regions', 'us');
@@ -1583,8 +1928,10 @@ function init() {
   syncMktCost();
   updateCostNote();
   renderCacheInfo();
+  updateCardCount();
   render();
   renderBoard();
+  renderPlanner();
 }
 
 init();

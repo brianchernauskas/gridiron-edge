@@ -26,6 +26,22 @@ offer against it:
 - A reality-check panel compares your number to the de-vigged market consensus, and warns you when
   you disagree by enough that the input is the more likely culprit than the edge
 
+### Weekly Slate Planner
+
+Build a card from the Calibrator or the Best Board, then size the whole thing at once.
+
+Per-bet Kelly assumes the bet is your only exposure. It isn't — every additional bet competes for the
+same bankroll, so summing individually-sized stakes systematically over-bets you. The planner simulates
+the full slate and solves for the stake vector that maximises expected log growth across all bets
+together, typically cutting total exposure 10–30% versus sizing one game at a time.
+
+Bets on the same game are resolved from a single simulated game — one margin, one total — so a team's
+spread and its moneyline correlate exactly instead of being treated as independent. Same-game pairs get
+sized roughly 30% smaller than equivalent independent bets, because they can't diversify each other.
+
+Also reports the chance the card finishes down, the 90% outcome range, worst case, and flags correlated
+exposure (multiple bets on one game, a pile of overs, a card that's all favourites).
+
 ### Situational Scorer
 
 Ten weighted factors — rest, travel, weather, injuries, motivation, line movement vs. tickets, pace,
