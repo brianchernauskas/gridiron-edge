@@ -530,6 +530,28 @@ const MARGIN_FREQ = {
 };
 const TOTAL_PUSH = { nfl: .026, cfb: .020 };
 
+// Population SD of final margins, used only to derive how much each integer margin is
+// over- or under-represented relative to a smooth distribution. Kept separate from the
+// user-editable model SDs so editing those can't corrupt the key-number shape.
+const POP_SD = { nfl: 13.5, cfb: 16.0 };
+
+// KEY_MULT[league][k] = how many times more often a margin of exactly k occurs than a
+// smooth normal would predict. Derived from MARGIN_FREQ at load. NFL 3 lands ~2.6x more
+// often than smooth; college 3 only ~1.8x, which is why key numbers matter less there.
+const KEY_MULT = {};
+(function buildKeyMultipliers() {
+  ['nfl', 'cfb'].forEach(lg => {
+    const s = POP_SD[lg], m = {};
+    Object.keys(MARGIN_FREQ[lg]).forEach(k => {
+      const kk = Number(k);
+      // Smooth reference: density at k, doubled because |margin| folds both signs.
+      const smooth = 2 * (0.3989422804014327 / s) * Math.exp(-(kk*kk) / (2*s*s));
+      m[kk] = MARGIN_FREQ[lg][k] / smooth;
+    });
+    KEY_MULT[lg] = m;
+  });
+})();
+
 // Situational factors. Positive rating = favors the side you're scoring.
 const FACTORS = [
   { id:'rest',   name:'Rest differential',        desc:'Extra days off, bye week, short week, Thursday game', w:{nfl:1.0, cfb:0.7} },
@@ -612,12 +634,11 @@ function devig(priceA, priceB) {
   const sum = a + b;
   return { a: a/sum, b: b/sum, hold: sum - 1 };
 }
+// Totals only — spread and moneyline pushes now fall out of the discrete margin
+// distribution, which knows where the line sits relative to the projection.
 function pushProbAt(line, league, isTotal) {
   if (Math.abs(line % 1) > 0.001) return 0;          // half-point line can't push
-  if (isTotal) return TOTAL_PUSH[league];
-  const k = Math.abs(Math.round(line));
-  if (k === 0) return 0;
-  return MARGIN_FREQ[league][k] || 0.006;
+  return isTotal ? TOTAL_PUSH[league] : 0;
 }
 function fmtLine(n) {
   if (n === null || n === undefined || isNaN(n)) return '—';
@@ -756,28 +777,67 @@ function median(arr) {
 /* ============================================================
    Core evaluation
    ============================================================ */
+// Discrete probability mass over integer final margins, centred on mu.
+// A smooth normal envelope re-weighted by the empirical key-number multipliers, then
+// renormalised. This is what makes a half-point off 3 worth what it is actually worth:
+// at -3 the mass sitting exactly on 3 pushes, at -2.5 you win all of it.
+const _pmfCache = new Map();
+function marginPmf(mu, sd, league) {
+  // Quantise mu and build from the quantised value, so a cache hit is always the
+  // distribution it claims to be. 0.01 points is far finer than any real projection.
+  const muR = Math.round(mu * 100) / 100;
+  const key = `${league}|${muR}|${sd}`;
+  const hit = _pmfCache.get(key);
+  if (hit) return hit;
+
+  const mult = KEY_MULT[league];
+  const lo = Math.floor(muR - 6*sd), hi = Math.ceil(muR + 6*sd);
+  const ks = [], ws = [];
+  let sum = 0;
+  for (let k = lo; k <= hi; k++) {
+    const z = (k - muR) / sd;
+    const w = Math.exp(-z*z / 2) * (mult[Math.abs(k)] || 1);
+    ks.push(k); ws.push(w); sum += w;
+  }
+  for (let i = 0; i < ws.length; i++) ws[i] /= sum;
+  const pmf = { ks, ws };
+  if (_pmfCache.size > 4000) _pmfCache.clear();
+  _pmfCache.set(key, pmf);
+  return pmf;
+}
+
+// Resolve a bet on `side` at `line` against the discrete margin distribution.
+// Wins when margin + line > 0, pushes when it lands exactly on the number.
+function discreteSpreadProbs(mu, sd, league, line) {
+  const { ks, ws } = marginPmf(mu, sd, league);
+  let win = 0, lose = 0, push = 0;
+  for (let i = 0; i < ks.length; i++) {
+    const v = ks[i] + line;
+    if (v > 1e-9) win += ws[i];
+    else if (v < -1e-9) lose += ws[i];
+    else push += ws[i];
+  }
+  return { win, lose, push };
+}
+
 function myProbAt(line, market, side, est, league) {
   const sdM = league === 'nfl' ? state.params.sdNflMargin : state.params.sdCfbMargin;
   const sdT = league === 'nfl' ? state.params.sdNflTotal  : state.params.sdCfbTotal;
 
   if (market === 'totals') {
-    // est = projected total points. side 'home' means Over.
+    // Totals stay on the normal model: there is no equivalently reliable frequency table
+    // for exact totals, and their key numbers are far weaker than spread key numbers.
     const z = (est - line) / sdT;
     const raw = side === 'home' ? normCdf(z) : 1 - normCdf(z);
     const push = pushProbAt(line, league, true);
     return { win: Math.max(0, raw - push/2), lose: Math.max(0, 1 - raw - push/2), push };
   }
 
-  // est = projected HOME margin
+  // est = projected HOME margin; flip it when betting the away side.
   const myMargin = side === 'home' ? est : -est;
-  if (market === 'h2h') {
-    const raw = normCdf(myMargin / sdM);
-    return { win: raw, lose: 1 - raw, push: 0 };
-  }
-  // spread: cover when myMargin + line > 0
-  const raw = normCdf((myMargin + line) / sdM);
-  const push = pushProbAt(line, league, false);
-  return { win: Math.max(0, raw - push/2), lose: Math.max(0, 1 - raw - push/2), push };
+  // A moneyline is a spread at zero — a tie is the push.
+  const line0 = market === 'h2h' ? 0 : line;
+  return discreteSpreadProbs(myMargin, sdM, league, line0);
 }
 
 function evaluateRow(row, market, side, est, league, bankroll, kf) {
@@ -817,15 +877,33 @@ function marketConsensus(game, market, side, excludeBook) {
   return { line: L0, prob: median(at.map(q => q.marketProb)), n: at.length, pool: quotes.length };
 }
 
+// Invert the discrete model: the margin whose conditional cover probability at `line`
+// equals p. Conditional (push-excluded) because a de-vigged market price excludes
+// pushes too. Monotone in mu, so bisection is safe.
+function impliedMarginDiscrete(p, sd, league, line) {
+  let lo = -80, hi = 80;
+  for (let i = 0; i < 40; i++) {
+    const mid = (lo + hi) / 2;
+    const r = discreteSpreadProbs(mid, sd, league, line);
+    const denom = r.win + r.lose;
+    const cond = denom > 0 ? r.win / denom : 0.5;
+    if (cond < p) lo = mid; else hi = mid;
+  }
+  return (lo + hi) / 2;
+}
+
 // The margin (or total) the consensus price implies, expressed in home terms.
+// Spreads and moneylines invert the same discrete model used to price them, so the
+// scan stays self-consistent; totals invert the normal, matching how they're priced.
 function impliedNumber(market, side, cons, league) {
-  const sd = market === 'totals'
-    ? (league === 'nfl' ? state.params.sdNflTotal : state.params.sdCfbTotal)
-    : (league === 'nfl' ? state.params.sdNflMargin : state.params.sdCfbMargin);
-  const z = invNormCdf(cons.prob);
-  if (market === 'totals') return side === 'home' ? cons.line + sd*z : cons.line - sd*z;
-  if (market === 'h2h')    return side === 'home' ? sd*z : -(sd*z);
-  const mSide = sd*z - cons.line;                       // spread, from the bet side's view
+  if (market === 'totals') {
+    const sd = league === 'nfl' ? state.params.sdNflTotal : state.params.sdCfbTotal;
+    const z = invNormCdf(cons.prob);
+    return side === 'home' ? cons.line + sd*z : cons.line - sd*z;
+  }
+  const sd = league === 'nfl' ? state.params.sdNflMargin : state.params.sdCfbMargin;
+  const line = market === 'h2h' ? 0 : cons.line;
+  const mSide = impliedMarginDiscrete(cons.prob, sd, league, line);
   return side === 'home' ? mSide : -mSide;
 }
 
@@ -1144,7 +1222,9 @@ function computeLean() {
 
   const norm = maxWeighted ? weighted / maxWeighted : 0;   // −1 … +1
   const pts = norm * maxLean;
-  const probShift = normCdf(pts / sd) - 0.5;
+  // Same discrete model the calibrator prices with, so the two never disagree.
+  const r = discreteSpreadProbs(pts, sd, state.league, 0);
+  const probShift = ((r.win + r.lose) > 0 ? r.win / (r.win + r.lose) : 0.5) - 0.5;
 
   // Update the readouts
   $('leanPts').textContent = (pts >= 0 ? '+' : '−') + Math.abs(pts).toFixed(1);

@@ -76,9 +76,24 @@ your win probability, the break-even rate, and de-vigged market prices are all d
 Showing a raw win probability next to break-even doesn't reconcile on whole-number spreads, where a
 meaningful share of games land exactly on the line.
 
-**Push probability comes from league-specific margin-frequency tables.** A margin of exactly 3 accounts
-for roughly 14.8% of NFL results but only ~9.0% in college — which is why key numbers matter far more
-in the NFL, and why the same half-point is worth different amounts in each league.
+**Spreads and moneylines are priced off a discrete margin distribution, not a smooth curve.** A normal
+model badly undervalues buying off a key number — it smooths through the lump of games that land exactly
+on 3. Instead, a normal envelope is re-weighted by empirical key-number multipliers derived from actual
+margin frequencies, then renormalised. A margin of exactly 3 occurs about 2.6x more often than smooth in
+the NFL, but only about 1.8x in college.
+
+The result is a half-point value curve that matches reality:
+
+| Buying off | NFL | CFB |
+|---|---|---|
+| 3 | 4.24% | 2.69% |
+| 7 | 3.12% | 2.26% |
+| 10 | 2.22% | 1.89% |
+| 5 (not a key number) | 0.59% | 0.53% |
+
+Push probability falls out of the same distribution, so it correctly depends on where the line sits
+relative to your projection rather than being a flat table lookup. Totals stay on the normal model —
+there's no equivalently reliable frequency table for exact totals, and their key numbers are much weaker.
 
 **Default standard deviations** are 13.5 (NFL margin), 10.5 (NFL total), 16.0 (CFB margin), 13.0
 (CFB total). All are editable under Settings, along with the maximum situational lean. Raising the max
