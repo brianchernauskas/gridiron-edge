@@ -47,17 +47,31 @@ adjustment to your projected margin. It is not a bet signal on its own.
 ## Setup
 
 The app reads live lines from [the-odds-api.com](https://the-odds-api.com). You need your own key —
-the free tier allows 500 requests/month.
+the free tier allows 500 credits/month.
 
 1. Open the app → **Settings** tab
-2. Paste your key, click **Save**
+2. Paste your key, choose your markets, click **Save**
 3. **Calibrator** → **Fetch live odds**
 
-One fetch pulls moneyline, spreads, and totals for every game in the selected league in a single
-request, and the game selector then works offline against that snapshot. Pull once per slate rather
-than once per game. Switching leagues costs a second request.
+### Making the free tier last
 
-There is also a manual line-entry path for when quota runs out or lines aren't posted yet.
+The `/odds` endpoint bills **credits = markets × regions**, not one credit per request. Requesting all
+three markets across US books costs 3 credits per league, so a both-league scan is 6. Two things keep
+that in check:
+
+**Fetch only the markets you price.** Spreads + totals is 2 credits per league — 4 for both, or about
+125 full scans a month. Adding moneyline raises it to 6 a scan and drops you to 83.
+
+**Slates are cached in the browser.** Reopening the app, reloading the page, and switching leagues all
+cost nothing; only "Fetch live odds" spends credits. One fetch pulls every game in the league and the
+selector then works entirely offline against that snapshot, so pull once per slate and work the whole
+card off it.
+
+The Settings tab shows the live credit cost of your current configuration and the age of each cached
+slate. There's also a manual line-entry path for when quota runs out or lines aren't posted yet.
+
+If you genuinely outgrow 500 credits, the paid tier is $30/month for 20,000. Running multiple free
+accounts to extend the quota violates their terms and risks all of the keys.
 
 ### About the key
 
