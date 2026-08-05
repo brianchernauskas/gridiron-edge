@@ -1,0 +1,1192 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gridiron Edge — Bet Calibrator</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --surface: #f8f9fb;
+    --surface2: #f0f2f5;
+    --border: #e2e6ea;
+    --text: #1a1d23;
+    --text-muted: #6b7280;
+    --accent: #047857;
+    --accent-light: #d1fae5;
+    --danger: #dc2626;
+    --danger-light: #fee2e2;
+    --warn: #b45309;
+    --warn-light: #fef3c7;
+    --success: #16a34a;
+    --success-light: #dcfce7;
+    --nfl: #1d4ed8;
+    --cfb: #c2410c;
+  }
+  [data-theme="dark"] {
+    --bg: #0f1117;
+    --surface: #1c1f2b;
+    --surface2: #252836;
+    --border: #2e3347;
+    --text: #e8eaf0;
+    --text-muted: #8b91a8;
+    --accent: #34d399;
+    --accent-light: #0d2f26;
+    --danger: #f87171;
+    --danger-light: #3b1515;
+    --warn: #fbbf24;
+    --warn-light: #3a2c0a;
+    --success: #4ade80;
+    --success-light: #0f2e1a;
+    --nfl: #60a5fa;
+    --cfb: #fb923c;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 15px; line-height: 1.5; min-height: 100vh; }
+
+  header {
+    background: var(--surface); border-bottom: 1px solid var(--border);
+    padding: 14px 24px; display: flex; align-items: center; justify-content: space-between;
+    position: sticky; top: 0; z-index: 20; flex-wrap: wrap; gap: 10px;
+  }
+  .header-left { display: flex; align-items: center; gap: 12px; }
+  .mark { font-family: Georgia, 'Times New Roman', serif; font-size: 1.15rem; font-weight: 700; letter-spacing: -.01em; }
+  .mark span { color: var(--accent); }
+  .header-sub { font-size: .78rem; color: var(--text-muted); }
+  .header-right { display: flex; align-items: center; gap: 8px; }
+  .icon-btn { background: none; border: 1px solid var(--border); border-radius: 6px; padding: 6px 12px; cursor: pointer; color: var(--text-muted); font-size: .82rem; font-family: inherit; }
+  .icon-btn:hover { background: var(--surface2); color: var(--text); }
+
+  .tabs { display: flex; gap: 2px; background: var(--surface); border-bottom: 1px solid var(--border); padding: 0 24px; position: sticky; top: 57px; z-index: 19; overflow-x: auto; }
+  .tab { background: none; border: none; border-bottom: 2px solid transparent; padding: 11px 16px; font-size: .88rem; font-weight: 500; color: var(--text-muted); cursor: pointer; font-family: inherit; white-space: nowrap; }
+  .tab:hover { color: var(--text); }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+
+  main { max-width: 1080px; margin: 0 auto; padding: 26px 24px 80px; }
+  .panel { display: none; }
+  .panel.active { display: block; }
+
+  .section { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 22px; margin-bottom: 20px; }
+  .section-title { font-size: .8rem; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted); margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+  .section-note { font-size: .78rem; color: var(--text-muted); text-transform: none; letter-spacing: 0; font-weight: 400; }
+
+  .form-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  .form-grid.two { grid-template-columns: 1fr 1fr; }
+  .form-group { display: flex; flex-direction: column; gap: 5px; }
+  .form-group.full { grid-column: 1 / -1; }
+  label { font-size: .78rem; font-weight: 500; color: var(--text-muted); }
+  .hint { font-size: .72rem; color: var(--text-muted); font-style: italic; }
+  input, select, textarea {
+    background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+    padding: 8px 11px; color: var(--text); font-size: .9rem; font-family: inherit; width: 100%;
+  }
+  input:focus, select:focus { outline: none; border-color: var(--accent); }
+  input[type=checkbox] { width: auto; }
+
+  .btn-primary { background: var(--accent); color: #fff; border: none; border-radius: 7px; padding: 9px 20px; font-size: .88rem; font-weight: 600; cursor: pointer; font-family: inherit; }
+  [data-theme="dark"] .btn-primary { color: #06251c; }
+  .btn-primary:hover { opacity: .9; }
+  .btn-primary:disabled { opacity: .45; cursor: not-allowed; }
+  .btn-secondary { background: none; border: 1px solid var(--border); border-radius: 7px; padding: 9px 16px; font-size: .88rem; cursor: pointer; color: var(--text); font-family: inherit; }
+  .btn-secondary:hover { background: var(--surface2); }
+  .form-actions { display: flex; gap: 10px; margin-top: 16px; flex-wrap: wrap; align-items: center; }
+
+  .league-toggle { display: inline-flex; border: 1px solid var(--border); border-radius: 7px; overflow: hidden; }
+  .league-toggle button { background: var(--bg); border: none; padding: 7px 15px; font-size: .82rem; font-weight: 600; cursor: pointer; color: var(--text-muted); font-family: inherit; }
+  .league-toggle button.active[data-league="nfl"] { background: var(--nfl); color: #fff; }
+  .league-toggle button.active[data-league="cfb"] { background: var(--cfb); color: #fff; }
+
+  .stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 18px; }
+  .stat-card { background: var(--bg); border: 1px solid var(--border); border-radius: 9px; padding: 15px 16px; }
+  .stat-label { font-size: .7rem; text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted); margin-bottom: 5px; }
+  .stat-value { font-size: 1.5rem; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.1; }
+  .stat-sub { font-size: .72rem; color: var(--text-muted); margin-top: 3px; }
+  .pos { color: var(--success); } .neg { color: var(--danger); }
+
+  .verdict { border-radius: 10px; padding: 18px 20px; margin-bottom: 18px; border: 1px solid; display: flex; gap: 16px; align-items: flex-start; }
+  .verdict-tag { font-size: 1.05rem; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; white-space: nowrap; }
+  .verdict-body { font-size: .88rem; }
+  .verdict.bet { background: var(--success-light); border-color: var(--success); }
+  .verdict.bet .verdict-tag { color: var(--success); }
+  .verdict.lean { background: var(--accent-light); border-color: var(--accent); }
+  .verdict.lean .verdict-tag { color: var(--accent); }
+  .verdict.thin { background: var(--warn-light); border-color: var(--warn); }
+  .verdict.thin .verdict-tag { color: var(--warn); }
+  .verdict.pass { background: var(--danger-light); border-color: var(--danger); }
+  .verdict.pass .verdict-tag { color: var(--danger); }
+
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: .86rem; }
+  th { text-align: left; font-size: .71rem; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); padding: 8px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  td { padding: 9px 10px; border-bottom: 1px solid var(--border); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr:last-child td { border-bottom: none; }
+  tbody tr:hover td { background: var(--surface2); }
+  tr.best td { background: var(--accent-light) !important; font-weight: 600; }
+  .num { text-align: right; }
+
+  .pill { display: inline-block; font-size: .68rem; font-weight: 700; padding: 2px 8px; border-radius: 20px; letter-spacing: .04em; }
+  .pill.nfl { background: rgba(29,78,216,.15); color: var(--nfl); }
+  .pill.cfb { background: rgba(194,65,12,.15); color: var(--cfb); }
+  .pill.best { background: var(--accent); color: #fff; }
+  [data-theme="dark"] .pill.best { color: #06251c; }
+
+  .callout { border-left: 3px solid var(--warn); background: var(--warn-light); padding: 11px 14px; border-radius: 0 7px 7px 0; font-size: .84rem; margin-top: 14px; }
+  .callout.info { border-left-color: var(--accent); background: var(--accent-light); }
+  .callout strong { display: block; margin-bottom: 3px; }
+
+  .empty-state { text-align: center; padding: 42px 20px; color: var(--text-muted); font-size: .9rem; }
+
+  /* Situational scorer */
+  .factor { display: grid; grid-template-columns: 1.5fr 2fr 68px; gap: 14px; align-items: center; padding: 11px 0; border-bottom: 1px solid var(--border); }
+  .factor:last-child { border-bottom: none; }
+  .factor-name { font-size: .87rem; font-weight: 500; }
+  .factor-desc { font-size: .73rem; color: var(--text-muted); margin-top: 1px; }
+  .factor-weight { font-size: .68rem; color: var(--text-muted); background: var(--surface2); padding: 1px 6px; border-radius: 4px; margin-left: 6px; }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+  .factor-val { text-align: right; font-size: .82rem; font-variant-numeric: tabular-nums; color: var(--text-muted); }
+  .factor-val.on { color: var(--accent); font-weight: 700; }
+
+  .lean-bar-wrap { position: relative; height: 30px; background: var(--surface2); border-radius: 6px; margin: 14px 0 6px; overflow: hidden; }
+  .lean-bar-mid { position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: var(--border); }
+  .lean-bar { position: absolute; top: 5px; bottom: 5px; background: var(--accent); border-radius: 3px; transition: all .2s; }
+  .lean-scale { display: flex; justify-content: space-between; font-size: .7rem; color: var(--text-muted); }
+
+  .contrib-row { display: flex; align-items: center; gap: 10px; font-size: .8rem; padding: 4px 0; }
+  .contrib-name { width: 170px; color: var(--text-muted); flex-shrink: 0; }
+  .contrib-track { flex: 1; height: 8px; background: var(--surface2); border-radius: 4px; position: relative; }
+  .contrib-fill { position: absolute; top: 0; bottom: 0; border-radius: 4px; }
+  .contrib-num { width: 52px; text-align: right; font-variant-numeric: tabular-nums; }
+
+  .kv { display: flex; justify-content: space-between; font-size: .84rem; padding: 6px 0; border-bottom: 1px solid var(--border); }
+  .kv:last-child { border-bottom: none; }
+  .kv-label { color: var(--text-muted); }
+  .kv-val { font-weight: 600; font-variant-numeric: tabular-nums; }
+
+  .status-line { font-size: .78rem; color: var(--text-muted); }
+  .status-line.err { color: var(--danger); }
+  .status-line.ok { color: var(--success); }
+
+  .disclaimer { font-size: .74rem; color: var(--text-muted); text-align: center; margin-top: 34px; line-height: 1.6; }
+
+  @media (max-width: 780px) {
+    .stats-row { grid-template-columns: 1fr 1fr; }
+    .form-grid, .form-grid.two { grid-template-columns: 1fr; }
+    /* Stacked: keep the rating label visually tied to its own slider, not the next factor. */
+    .factor { grid-template-columns: 1fr; gap: 4px; padding: 12px 0 18px; }
+    .factor-val { text-align: left; }
+    .contrib-name { width: 110px; }
+    .tabs { top: 90px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-left">
+    <div class="mark">Gridiron <span>Edge</span></div>
+    <div class="header-sub">Bet calibrator &amp; situational scorer</div>
+  </div>
+  <div class="header-right">
+    <div class="league-toggle" id="leagueToggle">
+      <button data-league="nfl" class="active">NFL</button>
+      <button data-league="cfb">CFB</button>
+    </div>
+    <button class="icon-btn" id="themeBtn">Dark</button>
+  </div>
+</header>
+
+<nav class="tabs">
+  <button class="tab active" data-panel="calibrator">Calibrator</button>
+  <button class="tab" data-panel="situational">Situational Scorer</button>
+  <button class="tab" data-panel="settings">Settings</button>
+</nav>
+
+<main>
+
+<!-- ============ CALIBRATOR ============ -->
+<section class="panel active" id="panel-calibrator">
+
+  <div class="section">
+    <div class="section-title">
+      <span>1 · Load the market</span>
+      <span class="section-note" id="quotaNote"></span>
+    </div>
+    <div class="form-actions" style="margin-top:0">
+      <button class="btn-primary" id="loadBtn">Fetch live odds</button>
+      <button class="btn-secondary" id="manualBtn">Manual entry instead</button>
+      <span class="status-line" id="loadStatus"></span>
+    </div>
+
+    <div id="manualBox" style="display:none; margin-top:18px; padding-top:18px; border-top:1px solid var(--border)">
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Away team</label>
+          <input id="mAway" placeholder="Away">
+        </div>
+        <div class="form-group">
+          <label>Home team</label>
+          <input id="mHome" placeholder="Home">
+        </div>
+        <div class="form-group">
+          <label>Book name</label>
+          <input id="mBook" placeholder="e.g. DraftKings">
+        </div>
+        <div class="form-group">
+          <label>Home line / total</label>
+          <input id="mLine" type="text" inputmode="decimal" placeholder="-3.5">
+          <span class="hint">Spread from home side, or the total</span>
+        </div>
+        <div class="form-group">
+          <label>Home / Over price</label>
+          <input id="mPriceA" type="text" inputmode="numeric" placeholder="-110">
+        </div>
+        <div class="form-group">
+          <label>Away / Under price</label>
+          <input id="mPriceB" type="text" inputmode="numeric" placeholder="+100">
+        </div>
+      </div>
+      <div class="form-actions">
+        <button class="btn-secondary" id="mAddBtn">Add this book</button>
+        <button class="btn-secondary" id="mClearBtn">Clear manual game</button>
+        <span class="status-line" id="mStatus"></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="section" id="pickSection">
+    <div class="section-title"><span>2 · Pick the bet</span></div>
+    <div class="form-grid">
+      <div class="form-group full">
+        <label>Game</label>
+        <select id="gameSel"><option value="">— load odds first —</option></select>
+      </div>
+      <div class="form-group">
+        <label>Market</label>
+        <select id="marketSel">
+          <option value="spreads">Spread</option>
+          <option value="totals">Total</option>
+          <option value="h2h">Moneyline</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Side you're betting</label>
+        <select id="sideSel">
+          <option value="home">Home</option>
+          <option value="away">Away</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label id="estLabel">Your projected home margin</label>
+        <input id="estInput" type="number" step="0.5" value="0">
+        <span class="hint" id="estHint">Positive = home wins by that much</span>
+      </div>
+    </div>
+
+    <div class="form-grid" style="margin-top:14px">
+      <div class="form-group">
+        <label>Bankroll ($)</label>
+        <input id="bankroll" type="number" step="50" value="1000">
+      </div>
+      <div class="form-group">
+        <label>Kelly fraction</label>
+        <select id="kellyFrac">
+          <option value="0.125">1/8 Kelly — very conservative</option>
+          <option value="0.25" selected>1/4 Kelly — recommended</option>
+          <option value="0.5">1/2 Kelly — aggressive</option>
+          <option value="1">Full Kelly — do not</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Situational lean</label>
+        <label style="display:flex;align-items:center;gap:8px;font-size:.85rem;color:var(--text);margin-top:4px">
+          <input type="checkbox" id="useLean"> <span id="leanLabel">None set</span>
+        </label>
+        <span class="hint">Set on the Situational tab</span>
+      </div>
+    </div>
+  </div>
+
+  <div id="resultsWrap"></div>
+
+</section>
+
+<!-- ============ SITUATIONAL ============ -->
+<section class="panel" id="panel-situational">
+
+  <div class="section">
+    <div class="section-title">
+      <span>Situational edge scorer</span>
+      <span class="section-note" id="sitLeagueNote">Weights shown for NFL</span>
+    </div>
+    <p style="font-size:.85rem;color:var(--text-muted);margin-bottom:14px">
+      Rate each factor from the perspective of <strong id="sitSideName">the home team</strong>.
+      Negative favors the opponent. Weights change by league — college markets are softer and
+      reward situational reads far more than the NFL does.
+    </p>
+    <div class="form-grid two" style="margin-bottom:6px">
+      <div class="form-group">
+        <label>Scoring for</label>
+        <select id="sitSide">
+          <option value="home">Home team</option>
+          <option value="away">Away team</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Matchup label (optional)</label>
+        <input id="sitLabel" placeholder="e.g. Michigan @ Ohio State">
+      </div>
+    </div>
+    <div id="factorList"></div>
+    <div class="form-actions">
+      <button class="btn-secondary" id="sitReset">Reset all to neutral</button>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title"><span>Composite lean</span></div>
+    <div class="stats-row">
+      <div class="stat-card">
+        <div class="stat-label">Lean</div>
+        <div class="stat-value" id="leanPts">0.0</div>
+        <div class="stat-sub">points of spread</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Direction</div>
+        <div class="stat-value" id="leanDir" style="font-size:1.1rem">Neutral</div>
+        <div class="stat-sub" id="leanDirSub">no side favored</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Conviction</div>
+        <div class="stat-value" id="leanConv" style="font-size:1.1rem">—</div>
+        <div class="stat-sub" id="leanConvSub">factors set: 0</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Win prob shift</div>
+        <div class="stat-value" id="leanProb">0.0%</div>
+        <div class="stat-sub">vs. a coin-flip game</div>
+      </div>
+    </div>
+
+    <div class="lean-bar-wrap"><div class="lean-bar-mid"></div><div class="lean-bar" id="leanBar"></div></div>
+    <div class="lean-scale"><span id="scaleLeft">−max opponent</span><span>even</span><span id="scaleRight">+max</span></div>
+
+    <div class="section-title" style="margin-top:22px;margin-bottom:10px"><span>What's driving it</span></div>
+    <div id="contribList"><div class="empty-state" style="padding:20px">All factors neutral — nothing driving a lean yet.</div></div>
+
+    <div class="callout info" style="margin-top:18px">
+      <strong>How this feeds the calibrator</strong>
+      The lean is a points adjustment to your projected margin, not a bet signal on its own.
+      Tick "Situational lean" on the Calibrator tab to apply it.
+    </div>
+  </div>
+</section>
+
+<!-- ============ SETTINGS ============ -->
+<section class="panel" id="panel-settings">
+  <div class="section">
+    <div class="section-title"><span>Odds API</span></div>
+    <p style="font-size:.85rem;color:var(--text-muted);margin-bottom:14px">
+      Uses <strong>the-odds-api.com</strong>. Free tier is 500 requests/month — one "Fetch live odds"
+      click costs one request per market group. Your key is stored in this browser's localStorage only;
+      it is never sent anywhere except the odds API itself.
+    </p>
+    <div class="form-grid two">
+      <div class="form-group">
+        <label>API key</label>
+        <input id="apiKey" type="password" placeholder="paste your key">
+      </div>
+      <div class="form-group">
+        <label>Regions</label>
+        <select id="regionSel">
+          <option value="us">US books</option>
+          <option value="us,us2">US + secondary US books</option>
+          <option value="us,eu,uk">US + EU + UK</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-actions">
+      <button class="btn-primary" id="saveKey">Save</button>
+      <span class="status-line" id="keyStatus"></span>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">
+      <span>Model parameters</span>
+      <span class="section-note">Standard deviations used to turn your projection into a probability</span>
+    </div>
+    <div class="form-grid">
+      <div class="form-group">
+        <label>NFL margin SD</label>
+        <input id="sdNflMargin" type="number" step="0.5" value="13.5">
+      </div>
+      <div class="form-group">
+        <label>NFL total SD</label>
+        <input id="sdNflTotal" type="number" step="0.5" value="10.5">
+      </div>
+      <div class="form-group">
+        <label>NFL max lean (pts)</label>
+        <input id="maxLeanNfl" type="number" step="0.5" value="3">
+      </div>
+      <div class="form-group">
+        <label>CFB margin SD</label>
+        <input id="sdCfbMargin" type="number" step="0.5" value="16">
+      </div>
+      <div class="form-group">
+        <label>CFB total SD</label>
+        <input id="sdCfbTotal" type="number" step="0.5" value="13">
+      </div>
+      <div class="form-group">
+        <label>CFB max lean (pts)</label>
+        <input id="maxLeanCfb" type="number" step="0.5" value="5">
+      </div>
+    </div>
+    <div class="callout" style="margin-top:16px">
+      <strong>Why these differ</strong>
+      College games have fatter margin tails and a softer market, so a situational read is worth more
+      points there. Don't raise the max lean much past these values — that's how a discipline tool
+      turns into a rationalization tool.
+    </div>
+    <div class="form-actions">
+      <button class="btn-primary" id="saveParams">Save parameters</button>
+      <button class="btn-secondary" id="resetParams">Restore defaults</button>
+      <span class="status-line" id="paramStatus"></span>
+    </div>
+  </div>
+</section>
+
+<p class="disclaimer">
+  Gridiron Edge is a decision-support tool. It measures whether a price beats your own projection —
+  it does not predict outcomes, and its most common correct answer is "pass."<br>
+  For personal use. Check that sports wagering is legal where you are, and never stake money you need.
+</p>
+
+</main>
+
+<script>
+/* ============================================================
+   Constants & config
+   ============================================================ */
+const SPORT_KEY = { nfl: 'americanfootball_nfl', cfb: 'americanfootball_ncaaf' };
+
+// Frequency of exact final margins — drives push probability and key-number warnings.
+const MARGIN_FREQ = {
+  nfl: {1:.044,2:.030,3:.148,4:.052,5:.019,6:.056,7:.092,8:.027,9:.017,10:.058,
+        11:.024,12:.014,13:.031,14:.045,15:.013,16:.018,17:.034,18:.010,19:.012,
+        20:.014,21:.021,24:.014,25:.008,28:.008},
+  cfb: {1:.033,2:.026,3:.090,4:.043,5:.017,6:.035,7:.070,8:.021,9:.014,10:.055,
+        11:.020,12:.013,13:.027,14:.050,15:.013,16:.017,17:.036,18:.011,19:.011,
+        20:.016,21:.034,22:.009,23:.008,24:.023,25:.008,27:.010,28:.019,31:.010,35:.009}
+};
+const TOTAL_PUSH = { nfl: .026, cfb: .020 };
+
+// Situational factors. Positive rating = favors the side you're scoring.
+const FACTORS = [
+  { id:'rest',   name:'Rest differential',        desc:'Extra days off, bye week, short week, Thursday game', w:{nfl:1.0, cfb:0.7} },
+  { id:'travel', name:'Travel & time zone',       desc:'Cross-country trip, body-clock mismatch, early kick', w:{nfl:0.8, cfb:1.0} },
+  { id:'wx',     name:'Weather',                  desc:'Wind over 15mph, heavy rain/snow, extreme cold',      w:{nfl:1.0, cfb:0.9} },
+  { id:'inj',    name:'Injury edge',              desc:'QB status above all; then OL, top corner, skill core', w:{nfl:1.4, cfb:1.6} },
+  { id:'motiv',  name:'Motivation spot',          desc:'Letdown, look-ahead, revenge, rivalry, opt-outs',     w:{nfl:0.7, cfb:1.3} },
+  { id:'move',   name:'Line move vs. tickets',    desc:'Reverse line movement is the sharpest public signal',  w:{nfl:1.3, cfb:1.1} },
+  { id:'pace',   name:'Pace & style mismatch',    desc:'Tempo, run-heaviness, how the matchup shortens games', w:{nfl:0.8, cfb:1.0} },
+  { id:'talent', name:'Talent gap vs. the line',  desc:'Roster quality the number may not fully price',        w:{nfl:0.4, cfb:1.2} },
+  { id:'home',   name:'Environment',              desc:'Crowd, altitude, field, true home-field strength',     w:{nfl:0.7, cfb:1.1} },
+  { id:'coach',  name:'Coaching & scheme',        desc:'Prep time advantage, situational coaching, matchup fit', w:{nfl:0.6, cfb:0.9} }
+];
+const RATING_TEXT = { '-2':'Strongly against', '-1':'Slightly against', '0':'Neutral', '1':'Slightly favors', '2':'Strongly favors' };
+
+const DEFAULT_PARAMS = { sdNflMargin:13.5, sdNflTotal:10.5, maxLeanNfl:3, sdCfbMargin:16, sdCfbTotal:13, maxLeanCfb:5 };
+
+/* ============================================================
+   State
+   ============================================================ */
+let state = {
+  league: 'nfl',
+  games: { nfl: [], cfb: [] },
+  manualGame: null,
+  ratings: {},
+  params: { ...DEFAULT_PARAMS },
+  lean: { pts: 0, side: 'home', label: '' }
+};
+FACTORS.forEach(f => state.ratings[f.id] = 0);
+
+const $ = id => document.getElementById(id);
+const store = {
+  get(k, d) { try { const v = localStorage.getItem('ge_' + k); return v === null ? d : JSON.parse(v); } catch(e) { return d; } },
+  set(k, v) { try { localStorage.setItem('ge_' + k, JSON.stringify(v)); } catch(e) {} }
+};
+
+/* ============================================================
+   Math
+   ============================================================ */
+// Accepts "+110", "-110", "−110" (U+2212), "110", or a number.
+function parseOdds(s) {
+  if (typeof s === 'number') return s;
+  if (s === null || s === undefined) return NaN;
+  return parseFloat(String(s).trim().replace(/[−–—]/g, '-').replace(/,/g, '').replace(/^\+/, ''));
+}
+function americanToDecimal(a) { a = Number(a); return a > 0 ? a/100 + 1 : 100/Math.abs(a) + 1; }
+function americanToProb(a) { a = Number(a); return a > 0 ? 100/(a + 100) : Math.abs(a)/(Math.abs(a) + 100); }
+function probToAmerican(p) {
+  if (!(p > 0) || p >= 1) return '—';
+  const d = 1/p;
+  return d >= 2 ? '+' + Math.round((d - 1) * 100) : '−' + Math.round(100/(d - 1));
+}
+function normCdf(z) {
+  const b1=.319381530, b2=-.356563782, b3=1.781477937, b4=-1.821255978, b5=1.330274429, p0=.2316419;
+  const az = Math.abs(z), t = 1/(1 + p0*az);
+  const d = .3989422804014327 * Math.exp(-az*az/2);
+  const cdfPos = 1 - d * t * (b1 + t*(b2 + t*(b3 + t*(b4 + t*b5))));
+  return z >= 0 ? cdfPos : 1 - cdfPos;
+}
+// Multiplicative de-vig across a two-way market.
+function devig(priceA, priceB) {
+  const a = americanToProb(priceA), b = americanToProb(priceB);
+  const sum = a + b;
+  return { a: a/sum, b: b/sum, hold: sum - 1 };
+}
+function pushProbAt(line, league, isTotal) {
+  if (Math.abs(line % 1) > 0.001) return 0;          // half-point line can't push
+  if (isTotal) return TOTAL_PUSH[league];
+  const k = Math.abs(Math.round(line));
+  if (k === 0) return 0;
+  return MARGIN_FREQ[league][k] || 0.006;
+}
+function fmtLine(n) {
+  if (n === null || n === undefined || isNaN(n)) return '—';
+  const s = (n > 0 ? '+' : n < 0 ? '−' : '') + Math.abs(n).toFixed(1).replace(/\.0$/, '');
+  return s;
+}
+function fmtPrice(p) { return (p > 0 ? '+' : '−') + Math.abs(p); }
+function pct(x, d) { return (x * 100).toFixed(d === undefined ? 1 : d) + '%'; }
+
+/* ============================================================
+   Odds API
+   ============================================================ */
+async function fetchOdds() {
+  const key = store.get('apiKey', '');
+  if (!key) {
+    $('loadStatus').textContent = 'No API key saved — add one on the Settings tab, or use manual entry.';
+    $('loadStatus').className = 'status-line err';
+    return;
+  }
+  const regions = store.get('regions', 'us');
+  const url = `https://api.the-odds-api.com/v4/sports/${SPORT_KEY[state.league]}/odds`
+            + `?apiKey=${encodeURIComponent(key)}&regions=${regions}`
+            + `&markets=h2h,spreads,totals&oddsFormat=american`;
+
+  $('loadBtn').disabled = true;
+  $('loadStatus').textContent = 'Fetching…';
+  $('loadStatus').className = 'status-line';
+  try {
+    const res = await fetch(url);
+    const remain = res.headers.get('x-requests-remaining');
+    if (remain !== null) {
+      store.set('quota', remain);
+      $('quotaNote').textContent = `${remain} API requests left this month`;
+    }
+    if (!res.ok) {
+      const txt = await res.text();
+      throw new Error(res.status === 401 ? 'Key rejected (401). Check it on the Settings tab.'
+                    : res.status === 429 ? 'Quota exhausted (429). Use manual entry until it resets.'
+                    : `HTTP ${res.status} — ${txt.slice(0,120)}`);
+    }
+    const data = await res.json();
+    state.games[state.league] = data;
+    if (!data.length) {
+      $('loadStatus').textContent = 'No games with open lines right now for this league.';
+      $('loadStatus').className = 'status-line err';
+    } else {
+      $('loadStatus').textContent = `Loaded ${data.length} games.`;
+      $('loadStatus').className = 'status-line ok';
+    }
+    populateGames();
+  } catch (e) {
+    $('loadStatus').textContent = e.message.includes('Failed to fetch')
+      ? 'Network/CORS error reaching the odds API.' : e.message;
+    $('loadStatus').className = 'status-line err';
+  } finally {
+    $('loadBtn').disabled = false;
+  }
+}
+
+function currentGameList() {
+  const list = state.games[state.league].slice();
+  if (state.manualGame) list.unshift(state.manualGame);
+  return list;
+}
+
+function populateGames() {
+  const sel = $('gameSel');
+  const prev = sel.value;
+  const list = currentGameList();
+  if (!list.length) {
+    sel.innerHTML = '<option value="">— no games loaded —</option>';
+    render();
+    return;
+  }
+  sel.innerHTML = list.map((g, i) => {
+    const when = g.commence_time
+      ? new Date(g.commence_time).toLocaleString([], { weekday:'short', month:'numeric', day:'numeric', hour:'numeric', minute:'2-digit' })
+      : 'manual';
+    return `<option value="${i}">${g.away_team} @ ${g.home_team} — ${when}</option>`;
+  }).join('');
+  sel.value = (prev && list[prev]) ? prev : '0';
+  render();
+}
+
+/* ============================================================
+   Pull every book's quote for the selected market
+   ============================================================ */
+function collectQuotes(game, market, side) {
+  const rows = [];
+  (game.bookmakers || []).forEach(bk => {
+    const m = (bk.markets || []).find(x => x.key === market);
+    if (!m || !m.outcomes) return;
+    let mine, other;
+    if (market === 'totals') {
+      mine  = m.outcomes.find(o => o.name === (side === 'home' ? 'Over' : 'Under'));
+      other = m.outcomes.find(o => o.name === (side === 'home' ? 'Under' : 'Over'));
+    } else {
+      const myTeam = side === 'home' ? game.home_team : game.away_team;
+      mine  = m.outcomes.find(o => o.name === myTeam);
+      other = m.outcomes.find(o => o.name !== myTeam);
+    }
+    if (!mine || !other || mine.price === undefined) return;
+    const dv = devig(mine.price, other.price);
+    rows.push({
+      book: bk.title || bk.key,
+      line: mine.point !== undefined ? mine.point : null,
+      price: mine.price,
+      marketProb: dv.a,
+      hold: dv.hold
+    });
+  });
+  return rows;
+}
+
+// Most-common value. Ties break toward the value nearest the median, so a three-book
+// board of -2.5 / -3 / -3.5 reports -3 as the market line rather than whichever
+// bookmaker happened to be listed first.
+function modal(values) {
+  if (!values.length) return null;
+  const counts = {};
+  values.forEach(v => counts[v] = (counts[v] || 0) + 1);
+  const med = median(values);
+  let best = null, bestN = -1;
+  Object.keys(counts).forEach(k => {
+    const v = Number(k), n = counts[k];
+    if (n > bestN || (n === bestN && Math.abs(v - med) < Math.abs(best - med))) { bestN = n; best = v; }
+  });
+  return best;
+}
+function median(arr) {
+  if (!arr.length) return null;
+  const s = arr.slice().sort((a,b) => a-b), n = s.length;
+  return n % 2 ? s[(n-1)/2] : (s[n/2 - 1] + s[n/2]) / 2;
+}
+
+/* ============================================================
+   Core evaluation
+   ============================================================ */
+function myProbAt(line, market, side, est, league) {
+  const sdM = league === 'nfl' ? state.params.sdNflMargin : state.params.sdCfbMargin;
+  const sdT = league === 'nfl' ? state.params.sdNflTotal  : state.params.sdCfbTotal;
+
+  if (market === 'totals') {
+    // est = projected total points. side 'home' means Over.
+    const z = (est - line) / sdT;
+    const raw = side === 'home' ? normCdf(z) : 1 - normCdf(z);
+    const push = pushProbAt(line, league, true);
+    return { win: Math.max(0, raw - push/2), lose: Math.max(0, 1 - raw - push/2), push };
+  }
+
+  // est = projected HOME margin
+  const myMargin = side === 'home' ? est : -est;
+  if (market === 'h2h') {
+    const raw = normCdf(myMargin / sdM);
+    return { win: raw, lose: 1 - raw, push: 0 };
+  }
+  // spread: cover when myMargin + line > 0
+  const raw = normCdf((myMargin + line) / sdM);
+  const push = pushProbAt(line, league, false);
+  return { win: Math.max(0, raw - push/2), lose: Math.max(0, 1 - raw - push/2), push };
+}
+
+function evaluateRow(row, market, side, est, league, bankroll, kf) {
+  const line = market === 'h2h' ? 0 : row.line;
+  const p = myProbAt(line, market, side, est, league);
+  const dec = americanToDecimal(row.price);
+  const b = dec - 1;
+  const ev = p.win * b - p.lose;                 // per $1 staked (a push returns the stake, EV 0)
+  const kelly = b > 0 ? ev / b : 0;
+  const stake = Math.max(0, kelly * kf * bankroll);
+  const breakeven = 1 / dec;
+  // Probability conditional on the bet actually resolving. This is the number that is
+  // directly comparable to break-even and to a de-vigged market price — both of which
+  // also exclude pushes. The raw win probability is not.
+  const condProb = (p.win + p.lose) > 0 ? p.win / (p.win + p.lose) : 0;
+  return { ...row, myProb: condProb, rawWin: p.win, pushProb: p.push, dec, ev, edge: ev,
+           kelly, stake, breakeven, fairPrice: probToAmerican(condProb) };
+}
+
+function render() {
+  const wrap = $('resultsWrap');
+  const list = currentGameList();
+  const gi = $('gameSel').value;
+  const game = list[gi];
+  if (!game) { wrap.innerHTML = '<div class="section"><div class="empty-state">Load live odds or add a game manually to begin.</div></div>'; return; }
+
+  const market = $('marketSel').value;
+  const side = $('sideSel').value;
+  const league = state.league;
+  let est = parseFloat($('estInput').value) || 0;
+
+  // Apply situational lean if requested
+  let leanApplied = 0;
+  if ($('useLean').checked && state.lean.pts !== 0 && market !== 'totals') {
+    // lean.pts is in favor of lean.side; convert to home-margin terms
+    leanApplied = state.lean.side === 'home' ? state.lean.pts : -state.lean.pts;
+    est += leanApplied;
+  }
+
+  const bankroll = parseFloat($('bankroll').value) || 0;
+  const kf = parseFloat($('kellyFrac').value);
+
+  const quotes = collectQuotes(game, market, side);
+  if (!quotes.length) {
+    wrap.innerHTML = `<div class="section"><div class="empty-state">No book is posting a ${market === 'h2h' ? 'moneyline' : market === 'totals' ? 'total' : 'spread'} for this game.</div></div>`;
+    return;
+  }
+
+  const rows = quotes.map(q => evaluateRow(q, market, side, est, league, bankroll, kf))
+                     .sort((a, b) => b.ev - a.ev);
+  const best = rows[0];
+
+  // Market consensus at the modal line
+  const marketLine = market === 'h2h' ? null : modal(quotes.filter(q => q.line !== null).map(q => q.line));
+  const atLine = market === 'h2h' ? quotes : quotes.filter(q => q.line === marketLine);
+  const consensusProb = median(atLine.map(q => q.marketProb));
+  const avgHold = median(quotes.map(q => q.hold));
+
+  const sideName = market === 'totals' ? (side === 'home' ? 'Over' : 'Under')
+                                       : (side === 'home' ? game.home_team : game.away_team);
+
+  // Verdict
+  const e = best.ev;
+  let cls, tag, msg;
+  if (e >= 0.03) { cls='bet'; tag='Bet'; msg=`Your projection makes this a genuine overlay. Take it at <strong>${best.book}</strong> — and only at ${market==='h2h'?'':fmtLine(best.line)+' '}${fmtPrice(best.price)} or better.`; }
+  else if (e >= 0.015) { cls='lean'; tag='Lean'; msg=`A real but modest edge. Worth a reduced stake at <strong>${best.book}</strong>; not worth chasing at a worse number.`; }
+  else if (e >= 0) { cls='thin'; tag='Thin'; msg=`The edge is inside your own model's error bars. Bet it only if you'd bet it without the tool — otherwise pass.`; }
+  else { cls='pass'; tag='Pass'; msg=`Every price on the board is worse than your own number. There is no bet here.`; }
+
+  const consensusFairLine = consensusProb !== null ? probToAmerican(consensusProb) : '—';
+  const disagreement = consensusProb !== null ? (best.myProb - consensusProb) : null;
+
+  // Key-number warning
+  let keyNote = '';
+  if (market === 'spreads' && marketLine !== null) {
+    const bestAbs = Math.abs(best.line), mktAbs = Math.abs(marketLine);
+    const lo = Math.min(bestAbs, mktAbs), hi = Math.max(bestAbs, mktAbs);
+    const crossed = Object.keys(MARGIN_FREQ[league])
+      .map(Number)
+      .filter(k => k > lo && k < hi || (k >= lo && k <= hi && bestAbs !== mktAbs))
+      .filter(k => MARGIN_FREQ[league][k] >= 0.04);
+    if (crossed.length) {
+      keyNote = `<div class="callout"><strong>Key number crossed</strong>
+        The best line (${fmtLine(best.line)}) sits on the other side of ${crossed.map(k => k).join(' and ')}
+        from the market line (${fmtLine(marketLine)}). In ${league === 'nfl' ? 'the NFL' : 'college'}, ${crossed.map(k => `${k} accounts for ${pct(MARGIN_FREQ[league][k])} of final margins`).join('; ')} —
+        that half-point is doing far more work than the price difference suggests.</div>`;
+    } else if (Number.isInteger(best.line) && best.pushProb > 0.03) {
+      keyNote = `<div class="callout"><strong>Push risk</strong>
+        ${fmtLine(best.line)} is a whole number sitting on a key number — roughly ${pct(best.pushProb)} of games land exactly there.
+        That's already priced into the stake below, but it's why a half-point buy can be worth it.</div>`;
+    }
+  }
+
+  const leanNote = leanApplied !== 0
+    ? `<div class="callout info"><strong>Situational lean applied</strong>
+       ${leanApplied > 0 ? '+' : '−'}${Math.abs(leanApplied).toFixed(1)} points toward ${state.lean.side === 'home' ? game.home_team : game.away_team}${state.lean.label ? ' (' + state.lean.label + ')' : ''}, giving an adjusted home margin of ${est > 0 ? '+' : ''}${est.toFixed(1)}.</div>`
+    : '';
+
+  wrap.innerHTML = `
+    <div class="verdict ${cls}">
+      <div class="verdict-tag">${tag}</div>
+      <div class="verdict-body">
+        <strong>${sideName}${market === 'h2h' ? ' ML' : market === 'totals' ? ' ' + fmtLine(best.line) : ' ' + fmtLine(best.line)}</strong>
+        at ${fmtPrice(best.price)} &mdash; ${best.book}<br>${msg}
+      </div>
+    </div>
+
+    <div class="stats-row">
+      <div class="stat-card">
+        <div class="stat-label">Your win prob</div>
+        <div class="stat-value">${pct(best.myProb)}</div>
+        <div class="stat-sub">fair price ${best.fairPrice}${best.pushProb ? ` · ${pct(best.pushProb)} push` : ''}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Break-even</div>
+        <div class="stat-value">${pct(best.breakeven)}</div>
+        <div class="stat-sub">what ${fmtPrice(best.price)} needs</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Edge</div>
+        <div class="stat-value ${best.ev >= 0 ? 'pos' : 'neg'}">${best.ev >= 0 ? '+' : '−'}${pct(Math.abs(best.ev))}</div>
+        <div class="stat-sub">${best.ev >= 0 ? '+' : '−'}$${Math.abs(best.ev * 100).toFixed(2)} per $100</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Stake</div>
+        <div class="stat-value">$${best.stake.toFixed(0)}</div>
+        <div class="stat-sub">${(kf * 100).toFixed(0)}% Kelly of $${bankroll.toFixed(0)}</div>
+      </div>
+    </div>
+
+    ${leanNote}
+    ${keyNote}
+
+    <div class="section">
+      <div class="section-title">
+        <span>Every book on ${sideName}</span>
+        <span class="section-note">priced against your projection, line by line · probabilities exclude pushes</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Book</th>
+            ${market === 'h2h' ? '' : '<th class="num">Line</th>'}
+            <th class="num">Price</th>
+            <th class="num">Break-even</th>
+            <th class="num">Your prob</th>
+            ${market === 'h2h' ? '' : '<th class="num">Push</th>'}
+            <th class="num">Edge</th>
+            <th class="num">EV / $100</th>
+            <th class="num">Stake</th>
+            <th class="num">Hold</th>
+          </tr></thead>
+          <tbody>
+            ${rows.map((r, i) => `
+              <tr class="${i === 0 && r.ev > 0 ? 'best' : ''}">
+                <td>${r.book} ${i === 0 && r.ev > 0 ? '<span class="pill best">BEST</span>' : ''}</td>
+                ${market === 'h2h' ? '' : `<td class="num">${fmtLine(r.line)}</td>`}
+                <td class="num">${fmtPrice(r.price)}</td>
+                <td class="num">${pct(r.breakeven)}</td>
+                <td class="num">${pct(r.myProb)}</td>
+                ${market === 'h2h' ? '' : `<td class="num" style="color:var(--text-muted)">${r.pushProb ? pct(r.pushProb) : '—'}</td>`}
+                <td class="num ${r.ev >= 0 ? 'pos' : 'neg'}">${r.ev >= 0 ? '+' : '−'}${pct(Math.abs(r.ev))}</td>
+                <td class="num ${r.ev >= 0 ? 'pos' : 'neg'}">${r.ev >= 0 ? '+' : '−'}$${Math.abs(r.ev * 100).toFixed(2)}</td>
+                <td class="num">$${r.stake.toFixed(0)}</td>
+                <td class="num">${pct(r.hold)}</td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">
+        <span>Reality check</span>
+        <span class="section-note">what the market believes, with the vig stripped out</span>
+      </div>
+      <div class="form-grid two">
+        <div>
+          <div class="kv"><span class="kv-label">Consensus line</span><span class="kv-val">${market === 'h2h' ? 'n/a' : fmtLine(marketLine)}</span></div>
+          <div class="kv"><span class="kv-label">Market fair prob (de-vigged)</span><span class="kv-val">${consensusProb !== null ? pct(consensusProb) : '—'}</span></div>
+          <div class="kv"><span class="kv-label">Market fair price</span><span class="kv-val">${consensusFairLine}</span></div>
+          <div class="kv"><span class="kv-label">Books at that line</span><span class="kv-val">${atLine.length} of ${quotes.length}</span></div>
+        </div>
+        <div>
+          <div class="kv"><span class="kv-label">Your prob at the best line</span><span class="kv-val">${pct(best.myProb)}</span></div>
+          <div class="kv"><span class="kv-label">You vs. market</span><span class="kv-val ${disagreement >= 0 ? 'pos' : 'neg'}">${disagreement === null ? '—' : (disagreement >= 0 ? '+' : '−') + pct(Math.abs(disagreement))}</span></div>
+          <div class="kv"><span class="kv-label">Median hold</span><span class="kv-val">${pct(avgHold)}</span></div>
+          <div class="kv"><span class="kv-label">Push probability</span><span class="kv-val">${best.pushProb ? pct(best.pushProb) : 'none — half point'}</span></div>
+        </div>
+      </div>
+      ${disagreement !== null && Math.abs(disagreement) > 0.08 ? `
+        <div class="callout"><strong>You disagree with the market by ${pct(Math.abs(disagreement))}</strong>
+        That is a very large gap against ${atLine.length} book${atLine.length === 1 ? '' : 's'}. Either you know something they
+        don't, or your projected ${market === 'totals' ? 'total' : 'margin'} is off. Check the input before you check the edge.</div>` : ''}
+    </div>
+  `;
+}
+
+/* ============================================================
+   Situational scorer
+   ============================================================ */
+function buildFactors() {
+  $('factorList').innerHTML = FACTORS.map(f => `
+    <div class="factor">
+      <div>
+        <div class="factor-name">${f.name}<span class="factor-weight" data-w="${f.id}">×${f.w[state.league].toFixed(1)}</span></div>
+        <div class="factor-desc">${f.desc}</div>
+      </div>
+      <input type="range" min="-2" max="2" step="1" value="${state.ratings[f.id]}" data-factor="${f.id}">
+      <div class="factor-val" data-val="${f.id}">Neutral</div>
+    </div>`).join('');
+
+  $('factorList').querySelectorAll('input[type=range]').forEach(inp => {
+    inp.addEventListener('input', () => {
+      state.ratings[inp.dataset.factor] = Number(inp.value);
+      store.set('ratings', state.ratings);
+      computeLean();
+    });
+  });
+  computeLean();
+}
+
+function refreshFactorWeights() {
+  FACTORS.forEach(f => {
+    const el = document.querySelector(`[data-w="${f.id}"]`);
+    if (el) el.textContent = '×' + f.w[state.league].toFixed(1);
+  });
+  $('sitLeagueNote').textContent = `Weights shown for ${state.league === 'nfl' ? 'NFL' : 'college football'}`;
+}
+
+function computeLean() {
+  const maxLean = state.league === 'nfl' ? state.params.maxLeanNfl : state.params.maxLeanCfb;
+  const sd = state.league === 'nfl' ? state.params.sdNflMargin : state.params.sdCfbMargin;
+
+  let weighted = 0, maxWeighted = 0, setCount = 0;
+  const contribs = [];
+  FACTORS.forEach(f => {
+    const w = f.w[state.league], r = state.ratings[f.id];
+    weighted += w * r;
+    maxWeighted += w * 2;
+    if (r !== 0) setCount++;
+    contribs.push({ name: f.name, val: w * r, w });
+  });
+
+  const norm = maxWeighted ? weighted / maxWeighted : 0;   // −1 … +1
+  const pts = norm * maxLean;
+  const probShift = normCdf(pts / sd) - 0.5;
+
+  // Update the readouts
+  $('leanPts').textContent = (pts >= 0 ? '+' : '−') + Math.abs(pts).toFixed(1);
+  $('leanPts').className = 'stat-value ' + (Math.abs(pts) < 0.1 ? '' : pts > 0 ? 'pos' : 'neg');
+
+  const side = $('sitSide').value;
+  const favored = Math.abs(pts) < 0.1 ? 'Neutral' : (pts > 0 ? (side === 'home' ? 'Home' : 'Away') : (side === 'home' ? 'Away' : 'Home'));
+  $('leanDir').textContent = favored;
+  $('leanDirSub').textContent = Math.abs(pts) < 0.1 ? 'no side favored' : `situation favors the ${favored.toLowerCase()} team`;
+
+  const conv = Math.abs(norm);
+  $('leanConv').textContent = conv < .12 ? 'None' : conv < .3 ? 'Slight' : conv < .55 ? 'Moderate' : 'Strong';
+  $('leanConvSub').textContent = `factors set: ${setCount} of ${FACTORS.length}`;
+
+  $('leanProb').textContent = (probShift >= 0 ? '+' : '−') + pct(Math.abs(probShift));
+
+  const bar = $('leanBar'), halfPct = Math.min(50, Math.abs(norm) * 50);
+  if (norm >= 0) { bar.style.left = '50%'; bar.style.right = (50 - halfPct) + '%'; bar.style.background = 'var(--success)'; }
+  else { bar.style.right = '50%'; bar.style.left = (50 - halfPct) + '%'; bar.style.background = 'var(--danger)'; }
+  $('scaleLeft').textContent = `−${maxLean} pts`;
+  $('scaleRight').textContent = `+${maxLean} pts`;
+
+  // Contribution bars
+  const active = contribs.filter(c => c.val !== 0).sort((a,b) => Math.abs(b.val) - Math.abs(a.val));
+  const maxAbs = active.length ? Math.max(...active.map(c => Math.abs(c.val))) : 1;
+  $('contribList').innerHTML = active.length ? active.map(c => {
+    const w = (Math.abs(c.val) / maxAbs) * 50;
+    const color = c.val > 0 ? 'var(--success)' : 'var(--danger)';
+    const style = c.val > 0 ? `left:50%;width:${w}%` : `right:50%;width:${w}%`;
+    return `<div class="contrib-row">
+      <div class="contrib-name">${c.name}</div>
+      <div class="contrib-track"><div class="contrib-fill" style="${style};background:${color}"></div></div>
+      <div class="contrib-num" style="color:${color}">${c.val > 0 ? '+' : '−'}${Math.abs(c.val).toFixed(1)}</div>
+    </div>`;
+  }).join('') : '<div class="empty-state" style="padding:20px">All factors neutral — nothing driving a lean yet.</div>';
+
+  // Slider labels
+  FACTORS.forEach(f => {
+    const el = document.querySelector(`[data-val="${f.id}"]`);
+    if (el) {
+      const r = state.ratings[f.id];
+      el.textContent = RATING_TEXT[String(r)];
+      el.className = 'factor-val' + (r !== 0 ? ' on' : '');
+    }
+  });
+
+  state.lean = { pts: Math.abs(pts) < 0.05 ? 0 : pts, side: side, label: $('sitLabel').value.trim() };
+  store.set('lean', state.lean);
+  updateLeanLabel();
+  if ($('useLean').checked) render();
+}
+
+function updateLeanLabel() {
+  const l = state.lean;
+  $('leanLabel').textContent = l.pts === 0
+    ? 'None set'
+    : `${l.pts > 0 ? '+' : '−'}${Math.abs(l.pts).toFixed(1)} pts to ${l.side}`;
+}
+
+/* ============================================================
+   Wiring
+   ============================================================ */
+function setMarketUI() {
+  const m = $('marketSel').value;
+  const sideSel = $('sideSel');
+  const prev = sideSel.value;
+  if (m === 'totals') {
+    sideSel.innerHTML = '<option value="home">Over</option><option value="away">Under</option>';
+    $('estLabel').textContent = 'Your projected total points';
+    $('estHint').textContent = 'Combined score you expect';
+  } else {
+    sideSel.innerHTML = '<option value="home">Home</option><option value="away">Away</option>';
+    $('estLabel').textContent = 'Your projected home margin';
+    $('estHint').textContent = 'Positive = home wins by that much';
+  }
+  sideSel.value = prev || 'home';
+}
+
+function setLeague(lg) {
+  state.league = lg;
+  store.set('league', lg);
+  document.querySelectorAll('#leagueToggle button').forEach(b => b.classList.toggle('active', b.dataset.league === lg));
+  refreshFactorWeights();
+  computeLean();
+  populateGames();
+}
+
+function addManualBook() {
+  const away = $('mAway').value.trim() || 'Away';
+  const home = $('mHome').value.trim() || 'Home';
+  const book = $('mBook').value.trim() || 'Book ' + ((state.manualGame?.bookmakers.length || 0) + 1);
+  const line = parseOdds($('mLine').value);
+  const pa = parseOdds($('mPriceA').value), pb = parseOdds($('mPriceB').value);
+  if (isNaN(pa) || isNaN(pb)) {
+    $('mStatus').textContent = 'Both prices are required.'; $('mStatus').className = 'status-line err'; return;
+  }
+  if (Math.abs(pa) < 100 || Math.abs(pb) < 100) {
+    $('mStatus').textContent = 'American odds must be 100 or greater in magnitude (e.g. −110, +145).';
+    $('mStatus').className = 'status-line err'; return;
+  }
+  if ($('marketSel').value !== 'h2h' && isNaN(line)) {
+    $('mStatus').textContent = 'A line is required for spreads and totals.';
+    $('mStatus').className = 'status-line err'; return;
+  }
+  if (!state.manualGame || state.manualGame.home_team !== home || state.manualGame.away_team !== away) {
+    state.manualGame = { id:'manual', home_team: home, away_team: away, commence_time: null, bookmakers: [] };
+  }
+  const market = $('marketSel').value;
+  const outcomes = market === 'totals'
+    ? [{ name:'Over', price: pa, point: line }, { name:'Under', price: pb, point: line }]
+    : market === 'h2h'
+      ? [{ name: home, price: pa }, { name: away, price: pb }]
+      : [{ name: home, price: pa, point: line }, { name: away, price: pb, point: -line }];
+
+  let bk = state.manualGame.bookmakers.find(b => b.title === book);
+  if (!bk) { bk = { key: book, title: book, markets: [] }; state.manualGame.bookmakers.push(bk); }
+  bk.markets = bk.markets.filter(m => m.key !== market);
+  bk.markets.push({ key: market, outcomes });
+
+  $('mStatus').textContent = `Added ${book} — ${state.manualGame.bookmakers.length} book(s) on this game.`;
+  $('mStatus').className = 'status-line ok';
+  $('mBook').value = '';
+  populateGames();
+  $('gameSel').value = '0';
+  render();
+}
+
+function init() {
+  // Restore persisted state
+  state.params = Object.assign({}, DEFAULT_PARAMS, store.get('params', {}));
+  state.ratings = Object.assign({}, state.ratings, store.get('ratings', {}));
+  state.lean = store.get('lean', state.lean);
+  state.league = store.get('league', 'nfl');
+  Object.keys(DEFAULT_PARAMS).forEach(k => { if ($(k)) $(k).value = state.params[k]; });
+  $('apiKey').value = store.get('apiKey', '');
+  $('regionSel').value = store.get('regions', 'us');
+  $('bankroll').value = store.get('bankroll', 1000);
+  $('kellyFrac').value = store.get('kellyFrac', '0.25');
+  const q = store.get('quota', null);
+  if (q !== null) $('quotaNote').textContent = `${q} API requests left this month`;
+
+  const theme = store.get('theme', 'light');
+  document.documentElement.dataset.theme = theme;
+  $('themeBtn').textContent = theme === 'light' ? 'Dark' : 'Light';
+
+  // Tabs
+  document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach(x => x.classList.remove('active'));
+    t.classList.add('active');
+    $('panel-' + t.dataset.panel).classList.add('active');
+  }));
+
+  $('themeBtn').addEventListener('click', () => {
+    const next = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light';
+    document.documentElement.dataset.theme = next;
+    $('themeBtn').textContent = next === 'light' ? 'Dark' : 'Light';
+    store.set('theme', next);
+  });
+
+  document.querySelectorAll('#leagueToggle button').forEach(b =>
+    b.addEventListener('click', () => setLeague(b.dataset.league)));
+
+  $('loadBtn').addEventListener('click', fetchOdds);
+  $('manualBtn').addEventListener('click', () => {
+    const box = $('manualBox');
+    const open = box.style.display !== 'none';
+    box.style.display = open ? 'none' : 'block';
+    $('manualBtn').textContent = open ? 'Manual entry instead' : 'Hide manual entry';
+  });
+  $('mAddBtn').addEventListener('click', addManualBook);
+  $('mClearBtn').addEventListener('click', () => {
+    state.manualGame = null; $('mStatus').textContent = 'Manual game cleared.'; $('mStatus').className = 'status-line';
+    populateGames();
+  });
+
+  $('gameSel').addEventListener('change', render);
+  $('marketSel').addEventListener('change', () => { setMarketUI(); render(); });
+  $('sideSel').addEventListener('change', render);
+  $('estInput').addEventListener('input', render);
+  $('useLean').addEventListener('change', render);
+  $('bankroll').addEventListener('input', () => { store.set('bankroll', $('bankroll').value); render(); });
+  $('kellyFrac').addEventListener('change', () => { store.set('kellyFrac', $('kellyFrac').value); render(); });
+
+  $('sitSide').addEventListener('change', () => {
+    $('sitSideName').textContent = $('sitSide').value === 'home' ? 'the home team' : 'the away team';
+    computeLean();
+  });
+  $('sitLabel').addEventListener('input', computeLean);
+  $('sitReset').addEventListener('click', () => {
+    FACTORS.forEach(f => state.ratings[f.id] = 0);
+    store.set('ratings', state.ratings);
+    document.querySelectorAll('#factorList input[type=range]').forEach(i => i.value = 0);
+    computeLean();
+  });
+
+  $('saveKey').addEventListener('click', () => {
+    store.set('apiKey', $('apiKey').value.trim());
+    store.set('regions', $('regionSel').value);
+    $('keyStatus').textContent = 'Saved to this browser.';
+    $('keyStatus').className = 'status-line ok';
+  });
+  $('saveParams').addEventListener('click', () => {
+    Object.keys(DEFAULT_PARAMS).forEach(k => {
+      const v = parseFloat($(k).value);
+      if (!isNaN(v) && v > 0) state.params[k] = v;
+    });
+    store.set('params', state.params);
+    $('paramStatus').textContent = 'Parameters saved.';
+    $('paramStatus').className = 'status-line ok';
+    computeLean(); render();
+  });
+  $('resetParams').addEventListener('click', () => {
+    state.params = { ...DEFAULT_PARAMS };
+    Object.keys(DEFAULT_PARAMS).forEach(k => $(k).value = DEFAULT_PARAMS[k]);
+    store.set('params', state.params);
+    $('paramStatus').textContent = 'Defaults restored.';
+    $('paramStatus').className = 'status-line';
+    computeLean(); render();
+  });
+
+  setMarketUI();
+  buildFactors();
+  setLeague(state.league);
+  updateLeanLabel();
+  render();
+}
+
+init();
+</script>
+</body>
+</html>
