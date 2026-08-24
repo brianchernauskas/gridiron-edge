@@ -137,3 +137,36 @@ conservative.
 For personal use. This tool measures whether a price beats your own projection; it does not predict
 outcomes and offers no guarantee of profit. The vig is real and most bets are not worth making. Check
 that sports wagering is legal where you are, and never stake money you need.
+
+## Look and feel
+
+Shares the dark navy / gold identity of the DBFFL draft-order board, so the two sites read as one
+set of tools. Dark is the default; the toggle still switches to light, which is the sensible theme
+for printing a slate card.
+
+The analytical tables are deliberately left dense. This is a tool for scanning numbers, and card
+styling would have cost rows per screen for no analytical gain.
+
+## Team logos
+
+The Best Board and the Slate Planner card show team logos, matched from the Odds API's team names.
+
+The map lives in `TEAM_ART` inside `index.html` rather than being fetched at runtime: ESPN's team
+endpoint sends no `Access-Control-Allow-Origin` header, so a browser cannot call it, and baking the
+map in keeps the app single-file and usable from `file://`. Logo images themselves are served from
+`a.espncdn.com`, which does allow cross-origin requests.
+
+Odds API team names match ESPN `displayName` exactly, which is why a plain lookup works. Anything
+unmatched falls back to a chip with the team's initials, so a name we don't know degrades to
+something readable rather than a broken image.
+
+To regenerate after a conference shuffle:
+
+```bash
+curl -s "https://site.api.espn.com/apis/site/v2/sports/football/college-football/teams?limit=1000" -o cfb.json
+curl -s "https://site.api.espn.com/apis/site/v2/sports/football/nfl/teams?limit=100" -o nfl.json
+```
+
+Then rebuild the two objects as `displayName -> [espnId, abbreviation]` for college and
+`displayName -> abbreviation` for the NFL, skipping any team with no `logos` entry.
+

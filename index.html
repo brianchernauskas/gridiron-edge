@@ -1,73 +1,93 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="light">
+<html lang="en" data-theme="dark">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Gridiron Edge — Bet Calibrator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
 <style>
   :root {
+    /* Light theme, kept for daylight reading and for printing the slate card. */
     --bg: #ffffff;
-    --surface: #f8f9fb;
-    --surface2: #f0f2f5;
-    --border: #e2e6ea;
-    --text: #1a1d23;
-    --text-muted: #6b7280;
-    --accent: #047857;
-    --accent-light: #d1fae5;
-    --danger: #dc2626;
+    --surface: #f6f8fc;
+    --surface2: #eef2f9;
+    --border: #dde4ee;
+    --text: #101728;
+    --text-muted: #5a6782;
+    --accent: #a97a12;
+    --accent-light: #fdf3d8;
+    --danger: #b91c1c;
     --danger-light: #fee2e2;
-    --warn: #b45309;
+    --warn: #a16207;
     --warn-light: #fef3c7;
-    --success: #16a34a;
+    --success: #15803d;
     --success-light: #dcfce7;
     --nfl: #1d4ed8;
-    --cfb: #c2410c;
+    --cfb: #b45309;
+    --font: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    --font-cond: 'Barlow Condensed', 'Oswald', 'Arial Narrow', sans-serif;
+    --radius: 14px;
   }
+  /* Dark is the default and matches the DBFFL board. */
   [data-theme="dark"] {
-    --bg: #0f1117;
-    --surface: #1c1f2b;
-    --surface2: #252836;
-    --border: #2e3347;
-    --text: #e8eaf0;
-    --text-muted: #8b91a8;
-    --accent: #34d399;
-    --accent-light: #0d2f26;
+    --bg: #0b1120;
+    --surface: #16203a;
+    --surface2: #1d2a49;
+    --border: #26324f;
+    --text: #eef2ff;
+    --text-muted: #9aa8c7;
+    --accent: #f5c451;
+    --accent-light: #2a2412;
     --danger: #f87171;
     --danger-light: #3b1515;
     --warn: #fbbf24;
     --warn-light: #3a2c0a;
-    --success: #4ade80;
+    --success: #34d399;
     --success-light: #0f2e1a;
     --nfl: #60a5fa;
     --cfb: #fb923c;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 15px; line-height: 1.5; min-height: 100vh; }
+  body {
+    background: var(--bg); color: var(--text); font-family: var(--font);
+    font-size: 15px; line-height: 1.5; min-height: 100vh; -webkit-font-smoothing: antialiased;
+  }
+  [data-theme="dark"] body {
+    background:
+      radial-gradient(1200px 600px at 50% -10%, #1b2b4d 0%, transparent 60%),
+      repeating-linear-gradient(90deg, transparent 0 118px, rgba(255,255,255,.018) 118px 120px),
+      var(--bg);
+    background-attachment: fixed;
+  }
 
   header {
-    background: var(--surface); border-bottom: 1px solid var(--border);
-    padding: 14px 24px; display: flex; align-items: center; justify-content: space-between;
+    background: color-mix(in srgb, var(--bg) 85%, transparent); backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--border); padding: 12px 24px; display: flex; align-items: center; justify-content: space-between;
     position: sticky; top: 0; z-index: 20; flex-wrap: wrap; gap: 10px;
   }
   .header-left { display: flex; align-items: center; gap: 12px; }
-  .mark { font-family: Georgia, 'Times New Roman', serif; font-size: 1.15rem; font-weight: 700; letter-spacing: -.01em; }
+  .mark { font-family: var(--font-cond); font-size: 1.6rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; line-height: 1.1; }
   .mark span { color: var(--accent); }
-  .header-sub { font-size: .78rem; color: var(--text-muted); }
+  .header-sub { font-size: .7rem; color: var(--text-muted); letter-spacing: .12em; text-transform: uppercase; }
   .header-right { display: flex; align-items: center; gap: 8px; }
   .icon-btn { background: none; border: 1px solid var(--border); border-radius: 6px; padding: 6px 12px; cursor: pointer; color: var(--text-muted); font-size: .82rem; font-family: inherit; }
   .icon-btn:hover { background: var(--surface2); color: var(--text); }
 
-  .tabs { display: flex; gap: 2px; background: var(--surface); border-bottom: 1px solid var(--border); padding: 0 24px; position: sticky; top: 57px; z-index: 19; overflow-x: auto; }
-  .tab { background: none; border: none; border-bottom: 2px solid transparent; padding: 11px 16px; font-size: .88rem; font-weight: 500; color: var(--text-muted); cursor: pointer; font-family: inherit; white-space: nowrap; }
-  .tab:hover { color: var(--text); }
-  .tab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+  .tabs { display: flex; gap: 4px; background: color-mix(in srgb, var(--bg) 85%, transparent); backdrop-filter: blur(10px); border-bottom: 1px solid var(--border); padding: 8px 24px; position: sticky; top: 55px; z-index: 19; overflow-x: auto; }
+  .tab { background: none; border: none; border-radius: 999px; padding: 8px 16px; font-size: .82rem; font-weight: 600; letter-spacing: .04em; color: var(--text-muted); cursor: pointer; font-family: inherit; white-space: nowrap; }
+  .tab:hover { color: var(--text); background: var(--surface); }
+  .tab.active { color: #0b1120; background: var(--accent); font-weight: 700; }
+  [data-theme="light"] .tab.active { color: #fff; }
 
   main { max-width: 1080px; margin: 0 auto; padding: 26px 24px 80px; }
   .panel { display: none; }
   .panel.active { display: block; }
 
-  .section { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 22px; margin-bottom: 20px; }
-  .section-title { font-size: .8rem; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted); margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+  .section { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 22px; margin-bottom: 20px; }
+  [data-theme="dark"] .section { box-shadow: 0 10px 30px rgba(0,0,0,.35); }
+  .section-title { font-family: var(--font-cond); font-size: 1.05rem; font-weight: 700; text-transform: uppercase; letter-spacing: .1em; color: var(--text); margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
   .section-note { font-size: .78rem; color: var(--text-muted); text-transform: none; letter-spacing: 0; font-weight: 400; }
 
   .form-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
@@ -83,8 +103,8 @@
   input:focus, select:focus { outline: none; border-color: var(--accent); }
   input[type=checkbox] { width: auto; }
 
-  .btn-primary { background: var(--accent); color: #fff; border: none; border-radius: 7px; padding: 9px 20px; font-size: .88rem; font-weight: 600; cursor: pointer; font-family: inherit; }
-  [data-theme="dark"] .btn-primary { color: #06251c; }
+  .btn-primary { background: var(--accent); color: #0b1120; border: none; border-radius: 10px; padding: 10px 22px; font-family: var(--font-cond); font-size: 1.02rem; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; cursor: pointer; }
+  [data-theme="light"] .btn-primary { color: #fff; }
   .btn-primary:hover { opacity: .9; }
   .btn-primary:disabled { opacity: .45; cursor: not-allowed; }
   .btn-secondary { background: none; border: 1px solid var(--border); border-radius: 7px; padding: 9px 16px; font-size: .88rem; cursor: pointer; color: var(--text); font-family: inherit; }
@@ -99,7 +119,7 @@
   .stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 18px; }
   .stat-card { background: var(--bg); border: 1px solid var(--border); border-radius: 9px; padding: 15px 16px; }
   .stat-label { font-size: .7rem; text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted); margin-bottom: 5px; }
-  .stat-value { font-size: 1.5rem; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.1; }
+  .stat-value { font-family: var(--font-cond); font-size: 1.9rem; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.05; letter-spacing: .02em; }
   .stat-sub { font-size: .72rem; color: var(--text-muted); margin-top: 3px; }
   .pos { color: var(--success); } .neg { color: var(--danger); }
 
@@ -117,18 +137,35 @@
 
   .table-wrap { overflow-x: auto; }
   table { width: 100%; border-collapse: collapse; font-size: .86rem; }
-  th { text-align: left; font-size: .71rem; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); padding: 8px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
-  td { padding: 9px 10px; border-bottom: 1px solid var(--border); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  th { text-align: left; font-size: .68rem; text-transform: uppercase; letter-spacing: .12em; color: var(--text-muted); padding: 9px 10px; background: color-mix(in srgb, var(--bg) 40%, transparent); border-bottom: 1px solid var(--border); white-space: nowrap; }
+  td { padding: 9px 10px; border-bottom: 1px solid color-mix(in srgb, var(--border) 55%, transparent); font-variant-numeric: tabular-nums; white-space: nowrap; }
   tr:last-child td { border-bottom: none; }
   tbody tr:hover td { background: var(--surface2); }
   tr.best td { background: var(--accent-light) !important; font-weight: 600; }
+  tr.best td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
   .num { text-align: right; }
+
+  .matchup { display: inline-flex; align-items: center; gap: 6px; }
+  .matchup .mteam { font-weight: 600; }
+  .matchup .mat { color: var(--text-muted); font-size: .78rem; margin: 0 2px; }
+  .tmark {
+    width: 26px; height: 26px; flex: none; border-radius: 50%; padding: 3px;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: radial-gradient(circle at 50% 42%, #fff 0%, #eef2f7 68%, #dbe2ec 100%);
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.55), 0 1px 4px rgba(0,0,0,.35);
+  }
+  [data-theme="light"] .tmark { box-shadow: inset 0 0 0 1px var(--border); }
+  .tmark img { width: 100%; height: 100%; object-fit: contain; display: block; }
+  .tmark-fallback {
+    font-family: var(--font-cond); font-size: .62rem; font-weight: 700;
+    letter-spacing: .02em; color: #26324f; padding: 0;
+  }
 
   .pill { display: inline-block; font-size: .68rem; font-weight: 700; padding: 2px 8px; border-radius: 20px; letter-spacing: .04em; }
   .pill.nfl { background: rgba(29,78,216,.15); color: var(--nfl); }
   .pill.cfb { background: rgba(194,65,12,.15); color: var(--cfb); }
-  .pill.best { background: var(--accent); color: #fff; }
-  [data-theme="dark"] .pill.best { color: #06251c; }
+  .pill.best { background: var(--accent); color: #0b1120; }
+
 
   .callout { border-left: 3px solid var(--warn); background: var(--warn-light); padding: 11px 14px; border-radius: 0 7px 7px 0; font-size: .84rem; margin-top: 14px; }
   .callout.info { border-left-color: var(--accent); background: var(--accent-light); }
@@ -604,6 +641,60 @@
    Constants & config
    ============================================================ */
 const SPORT_KEY = { nfl: 'americanfootball_nfl', cfb: 'americanfootball_ncaaf' };
+
+  // Team art, generated from ESPN's public team list. ESPN sends no CORS header
+  // so this cannot be fetched at runtime; it is baked in to keep the app
+  // single-file and usable from file://. Regenerate with the curl in README.
+  const TEAM_ART = {
+    nfl: {"Arizona Cardinals":"ari","Atlanta Falcons":"atl","Baltimore Ravens":"bal","Buffalo Bills":"buf","Carolina Panthers":"car","Chicago Bears":"chi","Cincinnati Bengals":"cin","Cleveland Browns":"cle","Dallas Cowboys":"dal","Denver Broncos":"den","Detroit Lions":"det","Green Bay Packers":"gb","Houston Texans":"hou","Indianapolis Colts":"ind","Jacksonville Jaguars":"jax","Kansas City Chiefs":"kc","Las Vegas Raiders":"lv","Los Angeles Chargers":"lac","Los Angeles Rams":"lar","Miami Dolphins":"mia","Minnesota Vikings":"min","New England Patriots":"ne","New Orleans Saints":"no","New York Giants":"nyg","New York Jets":"nyj","Philadelphia Eagles":"phi","Pittsburgh Steelers":"pit","San Francisco 49ers":"sf","Seattle Seahawks":"sea","Tampa Bay Buccaneers":"tb","Tennessee Titans":"ten","Washington Commanders":"wsh"},
+    cfb: {"Abilene Christian Wildcats":[2000,"ACU"],"Adams State Grizzlies":[2001,"ADSU"],"Adrian Bulldogs":[2003,"ADR"],"Air Force Falcons":[2005,"AF"],"Akron Zips":[2006,"AKR"],"Alabama A&M Bulldogs":[2010,"AAMU"],"Alabama Crimson Tide":[333,"ALA"],"Alabama State Hornets":[2011,"ALST"],"Albany State Golden Rams":[2013,"ABSU"],"Albion Britons":[2790,"ALBI"],"Albright Lions":[2015,"ALBR"],"Alcorn State Braves":[2016,"ALCN"],"Alfred Saxons":[365,"ALFR"],"Alfred State Pioneers":[3162,"AFST"],"Allegheny Gators":[2018,"ALLG"],"Allen Yellow Jackets":[2019,"ALNU"],"Alma Scots":[2800,"ALMA"],"Alvernia Golden Wolves":[111674,"ALVR"],"American International Yellow Jackets":[2022,"AIC"],"Amherst Mammoths":[7,"AMH"],"Anderson (IN) Ravens":[2023,"ANIN"],"Anderson (SC) Trojans":[129469,"ANSC"],"Angelo State Rams":[2025,"AGSU"],"App State Mountaineers":[2026,"APP"],"Arizona State Sun Devils":[9,"ASU"],"Arizona Wildcats":[12,"ARIZ"],"Arkansas Monticello Boll Weevils":[2028,"UAM"],"Arkansas Razorbacks":[8,"ARK"],"Arkansas State Red Wolves":[2032,"ARST"],"Arkansas Tech Wonder Boys":[2033,"ARTE"],"Arkansas-Pine Bluff Golden Lions":[2029,"UAPB"],"Army Black Knights":[349,"ARMY"],"Ashland Eagles":[308,"ASH"],"Assumption Greyhounds":[2038,"ASP"],"Auburn Tigers":[2,"AUB"],"Augsburg Auggies":[124,"AUGS"],"Augustana (IL) Vikings":[2042,"AUGC"],"Augustana (SD) Vikings":[2043,"AUSD"],"Aurora Spartans":[2044,"AUR"],"Austin 'Roos":[2045,"AUS"],"Austin Peay Governors":[2046,"APSU"],"Averett Cougars":[2047,"AVER"],"BYU Cougars":[252,"BYU"],"Baker University Baker":[488,"BAK"],"Baldwin Wallace Yellow Jackets":[188,"BW"],"Ball State Cardinals":[2050,"BALL"],"Barton Bulldogs":[122666,"BART"],"Bates Bobcats":[121,"BATE"],"Baylor Bears":[239,"BAY"],"Belhaven Blazers":[2056,"BELH"],"Beloit Buccaneers":[266,"BELO"],"Bemidji State Beavers":[132,"BST"],"Benedict Tigers":[490,"BEN"],"Benedictine (IL) Eagles":[2283,"BNIL"],"Bentley Falcons":[2060,"BENT"],"Berry Vikings":[2757,"BERR"],"Bethany (WV) Bison":[2062,"BCWV"],"Bethel (MN) Royals":[2802,"BUMN"],"Bethel University Tennessee Wildcats":[2064,"BETHTN"],"Bethune-Cookman Wildcats":[2065,"BCU"],"Black Hills State Yellow Jackets":[2069,"BHSU"],"Bloomsburg Huskies":[2071,"BBU"],"Bluefield State Big Blue":[124180,"BLUS"],"Bluffton Beavers":[2074,"BLF"],"Boise State Broncos":[68,"BOIS"],"Boston College Eagles":[103,"BC"],"Bowdoin Polar Bears":[340,"BOW"],"Bowie State Bulldogs":[2075,"BOWE"],"Bowling Green Falcons":[189,"BGSU"],"Brevard Tornados":[2913,"BRE"],"Bridgewater Eagles":[2079,"BRI"],"Bridgewater State Bears":[18,"BRIS"],"Brockport Golden Eagles":[2781,"BRO"],"Brown Bears":[225,"BRWN"],"Bryant Bulldogs":[2803,"BRY"],"Bucknell Bison":[2083,"BUCK"],"Buena Vista Beavers":[63,"BVU"],"Buffalo Bulls":[2084,"BUF"],"Buffalo State Bengals":[2085,"BSU"],"Butler Bulldogs":[2086,"BTLR"],"CSU Pueblo ThunderWolves":[2570,"CSUP"],"Cal Lutheran Kingsmen":[2094,"CLU"],"Cal Poly Mustangs":[13,"CP"],"California (PA) Vulcans":[2858,"CAPA"],"California Golden Bears":[25,"CAL"],"Campbell Fighting Camels":[2097,"CAM"],"Campbellsville University Tigers":[2098,"CMPBVIL"],"Capital Comets":[424,"CAPU"],"Carleton Knights":[2101,"CAR"],"Carnegie Mellon Tartans":[2102,"CGMU"],"Carroll (WI) Pioneers":[32,"CRU"],"Carson Newman Eagles":[2105,"CN"],"Carthage Firebirds":[2106,"CCW"],"Case Western Reserve Spartans":[2963,"CWRU"],"Catawba Indians":[2107,"CAT"],"Catholic Cardinals":[2108,"CATH"],"Central Arkansas Bears":[2110,"CARK"],"Central College Dutch":[2964,"CNTC"],"Central Connecticut Blue Devils":[2115,"CCSU"],"Central Michigan Chippewas":[2117,"CMU"],"Central Missouri Mules":[2118,"UCM"],"Central Oklahoma Bronchos":[2122,"UCO"],"Central State Marauders":[2119,"CNSU"],"Central Washington Wildcats":[2120,"CWAU"],"Centre Colonels":[2121,"CCO"],"Chadron State Eagles":[2123,"CHAD"],"Chapman Panthers":[411,"CHAP"],"Charleston (WV) Golden Eagles":[2128,"UCWV"],"Charleston Southern Buccaneers":[2127,"CHSO"],"Charlotte 49ers":[2429,"CLT"],"Chattanooga Mocs":[236,"UTC"],"Chicago Maroons":[80,"CHI"],"Chowan Hawks":[2804,"CWAN"],"Christopher Newport Captains":[3112,"CNU"],"Cincinnati Bearcats":[2132,"CIN"],"Claremont Mudd Scripps Stags":[17,"CMS"],"Clarion Golden Eagles":[2134,"CLRN"],"Clark Atlanta Panthers":[2805,"CKGA"],"Clemson Tigers":[228,"CLEM"],"Coast Guard Bears":[2557,"USCG"],"Coastal Carolina Chanticleers":[324,"CCU"],"Coe Kohawks":[2141,"COE"],"Colby White Mules":[33,"CLBY"],"Colgate Raiders":[2142,"COLG"],"Colorado Buffaloes":[38,"COLO"],"Colorado Mesa Mavericks":[11,"COMU"],"Colorado School of Mines Orediggers":[2146,"CMIN"],"Colorado State Rams":[36,"CSU"],"Columbia Lions":[171,"COLU"],"Concord Mountain Lions":[2148,"CONC"],"Concordia (MN) Cobbers":[2152,"CCMN"],"Concordia (WI) Falcons":[409,"CUW"],"Concordia Chicago Cougars":[2151,"CUC"],"Concordia St. Paul Golden Bears":[3066,"CSP"],"Cornell (IA) Rams":[2155,"CNIA"],"Cornell Big Red":[172,"COR"],"Crown Polars":[509,"CRWN"],"Curry Colonels":[40,"CC"],"Dakota State University Trojans":[512,"DAKOT"],"Dartmouth Big Green":[159,"DART"],"Davidson Wildcats":[2166,"DAV"],"Dayton Flyers":[2168,"DAY"],"DePauw Tigers":[83,"DPU"],"Dean Bulldogs":[110438,"DEAN"],"Defiance College Yellow Jackets":[190,"DEF"],"Delaware Blue Hens":[48,"DEL"],"Delaware State Hornets":[2169,"DSU"],"Delaware Valley Aggies":[2808,"DVU"],"Delta State Statesmen":[2170,"DLST"],"Denison Big Red":[2171,"DSN"],"Des Moines Vikings":[2254,"GRANDVIEW"],"Dickinson Red Devils":[2175,"DKSN"],"Dickinson State University Blue Hawks":[316,"DIC"],"Drake Bulldogs":[2181,"DRKE"],"Dubuque Spartans":[49,"DBQ"],"Duke Blue Devils":[150,"DUKE"],"Duquesne Dukes":[2184,"DUQ"],"East Carolina Pirates":[151,"ECU"],"East Central Tigers":[2191,"ECNU"],"East Stroudsburg Warriors":[2188,"ESU"],"East Tennessee State Buccaneers":[2193,"ETSU"],"East Texas A&M Lions":[2837,"ETAM"],"East Texas Baptist Tigers":[2194,"ETBU"],"Eastern Eagles":[127954,"EU"],"Eastern Illinois Panthers":[2197,"EIU"],"Eastern Kentucky Colonels":[2198,"EKU"],"Eastern Michigan Eagles":[2199,"EMU"],"Eastern New Mexico Greyhounds":[2201,"ENMU"],"Eastern Washington Eagles":[331,"EWU"],"Edinboro Fighting Scots":[2205,"EDBR"],"Edward Waters Tigers":[2206,"EDW"],"Elizabeth City State Vikings":[2207,"ECSU"],"Elmhurst Bluejays":[72,"ELMH"],"Elon Phoenix":[2210,"ELON"],"Emory & Henry Wasps":[2213,"EHC"],"Emporia State Hornets":[2214,"EMSU"],"Endicott Gulls":[452,"ENDC"],"Erskine Flying Fleet":[101784,"ERSK"],"Eureka Red Devils":[101,"ERKA"],"FDU Florham Devils":[2221,"FDUF"],"Fairmont State Falcons":[2986,"FMSU"],"Fayetteville State Broncos":[2220,"FAYU"],"Ferris State Bulldogs":[2222,"FRST"],"Ferrum Panthers":[366,"FC"],"Findlay Oilers":[2224,"UF"],"Fitchburg State Falcons":[114,"FBSU"],"Florida A&M Rattlers":[50,"FAMU"],"Florida Atlantic Owls":[2226,"FAU"],"Florida Gators":[57,"FLA"],"Florida International Panthers":[2229,"FIU"],"Florida State Seminoles":[52,"FSU"],"Fordham Rams":[2230,"FOR"],"Fort Hays Tigers":[2231,"FHSU"],"Fort Lewis Skyhawks":[2237,"FLWC"],"Fort Valley State Wildcats":[2232,"FVSU"],"Framingham State Rams":[2967,"FRSU"],"Franklin & Marshall Diplomats":[2234,"FMC"],"Franklin Grizzlies":[2233,"FRKL"],"Franklin Pierce Ravens":[112334,"FP"],"Fresno State Bulldogs":[278,"FRES"],"Frostburg State Bobcats":[341,"FSTU"],"Furman Paladins":[231,"FUR"],"Gallaudet Bison":[417,"GLDT"],"Gannon Golden Knights":[367,"GANN"],"Gardner-Webb Runnin' Bulldogs":[2241,"GWEB"],"Geneva Golden Tornadoes":[2242,"GEN"],"George Fox Bruins":[415,"GFU"],"George Mason University Patriots":[2244,"GMU"],"Georgetown College Kentucky Tigers":[2245,"GTOWNCOLL"],"Georgetown Hoyas":[46,"GTWN"],"Georgia Bulldogs":[61,"UGA"],"Georgia Southern Eagles":[290,"GASO"],"Georgia State Panthers":[2247,"GAST"],"Georgia Tech Yellow Jackets":[59,"GT"],"Gettysburg Bullets":[2248,"GTYB"],"Glenville State Pioneers":[2249,"GVLS"],"Graceland University Graceland":[530,"GRC"],"Grambling Tigers":[2755,"GRAM"],"Grand Valley State Lakers":[125,"GVSU"],"Greensboro Pride":[2256,"GRNB"],"Greenville Panthers":[2257,"GRNV"],"Grinnell Pioneers":[65,"GRNL"],"Grove City Wolverines":[146,"GRO"],"Guilford Quakers":[2258,"GLFD"],"Gustavus Adolphus Golden Gusties":[2968,"GAC"],"Hamilton Continentals":[348,"HAM"],"Hamline Pipers":[162,"HMLN"],"Hampden Sydney Tigers":[297,"HSC"],"Hampton Pirates":[2261,"HAMP"],"Hanover Panthers":[2262,"HNVR"],"Hardin Simmons Cowboys":[2810,"HSU"],"Harding Bisons":[2264,"HARD"],"Hartwick Hawks":[173,"HRTW"],"Harvard Crimson":[108,"HARV"],"Hawai'i Rainbow Warriors":[62,"HAW"],"Heidelberg Student Princes":[191,"HDBG"],"Henderson State Reddies":[2271,"HSTU"],"Hendrix Warriors":[418,"HDX"],"Hilbert Hawks":[125974,"HLBT"],"Hillsdale Chargers":[2273,"HLDL"],"Hiram Terriers":[2274,"HIRM"],"Hobart Statesmen":[174,"HBRT"],"Holy Cross Crusaders":[107,"HC"],"Hope Flying Dutchmen":[2812,"HOPE"],"Houston Christian Huskies":[2277,"HCU"],"Houston Cougars":[248,"HOU"],"Howard Bison":[47,"HOW"],"Howard Payne Yellow Jackets":[2758,"HWPU"],"Huntingdon Hawks":[2938,"HNTC"],"Husson Eagles":[2280,"HUSS"],"IU Pennsylvania Crimson Hawks":[2291,"IUP"],"Idaho State Bengals":[304,"IDST"],"Idaho Vandals":[70,"IDHO"],"Illinois College Blueboys":[2286,"ILLC"],"Illinois Fighting Illini":[356,"ILL"],"Illinois State Redbirds":[2287,"ILST"],"Illinois Wesleyan Titans":[306,"ILWU"],"Incarnate Word Cardinals":[2916,"UIW"],"Indiana Hoosiers":[84,"IU"],"Indiana State Sycamores":[282,"INST"],"Indianapolis Greyhounds":[2292,"INDY"],"Iowa Hawkeyes":[2294,"IOWA"],"Iowa State Cyclones":[66,"ISU"],"Ithaca Bombers":[175,"ITH"],"Jackson State Tigers":[2296,"JKST"],"Jacksonville State Gamecocks":[55,"JXST"],"James Madison Dukes":[256,"JMU"],"John Carroll Blue Streaks":[2302,"JCU"],"Johns Hopkins Blue Jays":[118,"JHU"],"Johnson C. Smith Golden Bulls":[2304,"JCSU"],"Juniata Eagles":[246,"JUN"],"Kalamazoo Hornets":[126,"KALC"],"Kansas Jayhawks":[2305,"KU"],"Kansas State Wildcats":[2306,"KSU"],"Kean Cougars":[2871,"KEAN"],"Kennesaw State Owls":[338,"KENN"],"Kent State Golden Flashes":[2309,"KENT"],"Kentucky State Thorobreds":[2310,"KYSU"],"Kentucky Wesleyan Panthers":[2316,"KWC"],"Kentucky Wildcats":[96,"UK"],"Kenyon Owls":[352,"KNY"],"Keystone Giants":[122774,"KYSN"],"King's Monarchs":[247,"KNGS"],"Knox Prairie Fire":[255,"KNOX"],"Kutztown Golden Bears":[2315,"KUTZ"],"LSU Tigers":[99,"LSU"],"La Verne Leopards":[2318,"ULV"],"LaGrange Panthers":[548,"LGC"],"Lafayette Leopards":[322,"LAF"],"Lake Erie Storm":[437,"LKER"],"Lake Forest Foresters":[262,"LFC"],"Lakeland Muskies":[6353,"LKLD"],"Lamar Cardinals":[2320,"LAM"],"Lane College Dragons":[2323,"LANE"],"Lawrence Vikings":[268,"LAW"],"Lebanon Valley Flying Dutchmen":[388,"LVC"],"Lehigh Mountain Hawks":[2329,"LEH"],"Lenoir Rhyne Bears":[2331,"LENR"],"Lewis & Clark River Otters":[2333,"LC"],"Liberty Flames":[2335,"LIB"],"Lincoln (MO) Blue Tigers":[2876,"LNMO"],"Lincoln (PA) Lions":[2339,"LNPA"],"Lindenwood Lions":[2815,"LIN"],"Linfield Wildcats":[203,"LINF"],"Livingstone Blue Bears":[2940,"LIV"],"Lock Haven Bald Eagles":[209,"LHU"],"Long Island University Sharks":[2341,"LIU"],"Loras Duhawks":[263,"LOR"],"Louisiana Christian Wildcats":[2347,"LCHR"],"Louisiana Ragin' Cajuns":[309,"UL"],"Louisiana Tech Bulldogs":[2348,"LT"],"Louisville Cardinals":[97,"LOU"],"Luther Norse":[67,"LUTH"],"Lycoming Warriors":[2354,"LYCO"],"MIT Engineers":[109,"MIT"],"Macalester Scots":[2359,"MAC"],"Maine Black Bears":[311,"ME"],"Manchester Spartans":[2362,"MNCH"],"Mansfield Mountaineers":[2365,"MNFD"],"Marietta Pioneers":[317,"MRTT"],"Marist Red Foxes":[2368,"MRST"],"Mars Hill Lions":[2369,"MHU"],"Marshall Thundering Herd":[276,"MRSH"],"Martin Luther Knights":[446,"MLC"],"Mary Hardin Baylor Crusaders":[2371,"MHB"],"Maryland Terrapins":[120,"MD"],"Maryville (TN) Scots":[2373,"MCTN"],"Mass Maritime Buccaneers":[110,"MMT"],"Massachusetts Minutemen":[113,"MASS"],"McDaniel Green Terror":[2700,"MCD"],"McKendree Bearcats":[2816,"MCK"],"McMurry War Hawks":[241,"MCM"],"McNeese Cowboys":[2377,"MCN"],"Memphis Tigers":[235,"MEM"],"Mercer Bears":[2382,"MER"],"Merchant Marine Mariners":[2383,"MMA"],"Mercyhurst Lakers":[2385,"MERC"],"Merrimack Warriors":[2771,"MRMK"],"Methodist Monarchs":[291,"MU"],"Miami (OH) RedHawks":[193,"M-OH"],"Miami Hurricanes":[2390,"MIA"],"Michigan State Spartans":[127,"MSU"],"Michigan Tech Huskies":[2392,"MTU"],"Michigan Wolverines":[130,"MICH"],"Middle Tennessee Blue Raiders":[2393,"MTSU"],"Middlebury Panthers":[2394,"MIDB"],"Miles Golden Bears":[2396,"MILE"],"Millersville Marauders":[210,"MILL"],"Millikin Big Blue":[74,"MILK"],"Millsaps Majors":[2398,"MLSP"],"Minnesota Duluth Bulldogs":[134,"UMD"],"Minnesota Golden Gophers":[135,"MINN"],"Minnesota Morris Cougars":[2399,"MNMO"],"Minnesota St Moorhead Dragons":[2817,"MSUM"],"Minnesota State Mavericks":[2364,"MNST"],"Minot State Beavers":[568,"MINS"],"Misericordia Cougars":[2969,"MISE"],"Mississippi State Bulldogs":[344,"MSST"],"Mississippi Valley State Delta Devils":[2400,"MVSU"],"Missouri Baptist Spartans":[2880,"MOBU"],"Missouri S&T Miners":[2402,"MS&T"],"Missouri Southern State Lions":[2403,"MSSU"],"Missouri State Bears":[2623,"MOST"],"Missouri Tigers":[142,"MIZ"],"Missouri Western Griffons":[137,"MOWE"],"Monmouth (IL) Fighting Scots":[2919,"MNIL"],"Monmouth Hawks":[2405,"MONM"],"Montana Grizzlies":[149,"MONT"],"Montana State Bobcats":[147,"MTST"],"Montana Western Bulldogs":[2701,"UMW"],"Montclair State Red Hawks":[2818,"MCST"],"Moravian Greyhounds":[323,"MOR"],"Morehead State Eagles":[2413,"MORE"],"Morehouse Maroon Tigers":[60,"MRHO"],"Morgan State Bears":[2415,"MORG"],"Morningside Chiefs":[2416,"MNGS"],"Mount St Joseph Lions":[2419,"MSJ"],"Mount Union Purple Raiders":[426,"UMU"],"Muhlenberg Mules":[2422,"MUHL"],"Murray State Racers":[93,"MUR"],"Muskingum Fighting Muskies":[332,"MSK"],"NC State Wolfpack":[152,"NCSU"],"Navy Midshipmen":[2426,"NAVY"],"Nebraska Cornhuskers":[158,"NEB"],"Nebraska Kearney Lopers":[2438,"NEBK"],"Nebraska Wesleyan Prairie Wolves":[6845,"NWU"],"Nelson (TX) Lions":[2904,"NEL"],"Nevada Wolf Pack":[2440,"NEV"],"New England Nor'easters":[111675,"UNE"],"New Hampshire Wildcats":[160,"UNH"],"New Haven Chargers":[2441,"NHVN"],"New Mexico Highlands Cowboys":[2424,"NMHU"],"New Mexico Lobos":[167,"UNM"],"New Mexico State Aggies":[166,"NMSU"],"Newberry Wolves":[2444,"NBRY"],"Nicholls Colonels":[2447,"NICH"],"Nichols Bison":[2884,"NICC"],"Norfolk State Spartans":[2450,"NORF"],"North Alabama Lions":[2453,"UNA"],"North American Stallions":[123086,"NAMU"],"North Carolina A&T Aggies":[2448,"NCAT"],"North Carolina Central Eagles":[2428,"NCCU"],"North Carolina Tar Heels":[153,"UNC"],"North Carolina Wesleyan Battling Bishops":[286,"NCW"],"North Central College Cardinals":[3071,"NCC"],"North Dakota Fighting Hawks":[155,"UND"],"North Dakota State Bison":[2449,"NDSU"],"North Greenville Trailblazers":[2822,"NGU"],"North Park Vikings":[75,"NPU"],"North Texas Mean Green":[249,"UNT"],"Northeastern State RiverHawks":[196,"NESU"],"Northern Arizona Lumberjacks":[2464,"NAU"],"Northern Colorado Bears":[2458,"UNCO"],"Northern Illinois Huskies":[2459,"NIU"],"Northern Iowa Panthers":[2460,"UNI"],"Northern Michigan Wildcats":[128,"NMI"],"Northwest Missouri State Bearcats":[138,"MWMO"],"Northwestern (MN) Eagles":[583,"UNW"],"Northwestern (OK) Rangers":[2823,"NWOK"],"Northwestern State Demons":[2466,"NWST"],"Northwestern Wildcats":[77,"NU"],"Northwood Timberwolves":[2886,"NWD"],"Norwich Cadets":[2467,"NWCH"],"Notre Dame Fighting Irish":[87,"ND"],"Oberlin Yeomen":[391,"OBE"],"Ohio Bobcats":[195,"OHIO"],"Ohio Northern Polar Bears":[427,"OHNU"],"Ohio State Buckeyes":[194,"OSU"],"Ohio Wesleyan Battling Bishops":[2980,"OWU"],"Oklahoma Baptist Bison":[319,"OKBU"],"Oklahoma Sooners":[201,"OU"],"Oklahoma State Cowboys":[197,"OKST"],"Old Dominion Monarchs":[295,"ODU"],"Ole Miss Rebels":[145,"MISS"],"Olivet Comets":[354,"UOO"],"Oregon Ducks":[2483,"ORE"],"Oregon State Beavers":[204,"ORST"],"Otterbein Cardinals":[359,"OTTB"],"Ouachita Baptist Tigers":[2888,"OBU"],"Pace Setters":[2487,"PACE"],"Pacific (OR) Boxers":[205,"PCOR"],"Pacific Lutheran Lutes":[2486,"PCLT"],"Penn State Nittany Lions":[213,"PSU"],"Pennsylvania Quakers":[219,"PENN"],"Pikeville Bears":[95,"PIKEV"],"Pittsburg State Gorillas":[90,"PTSU"],"Pittsburgh Panthers":[221,"PITT"],"Plymouth State Panthers":[2972,"PLYM"],"Pomona Pitzer Sagehens":[2923,"POPI"],"Portland State Vikings":[2502,"PRST"],"Post Eagles":[126086,"POST"],"Prairie View A&M Panthers":[2504,"PV"],"Presbyterian Blue Hose":[2506,"PRES"],"Princeton Tigers":[163,"PRIN"],"Puget Sound Loggers":[2508,"PUG"],"Purdue Boilermakers":[2509,"PUR"],"Quincy Hawks":[2825,"QUI"],"Randolph Macon Yellow Jackets":[2516,"RMC"],"Redlands Bulldogs":[29,"REDL"],"Rensselaer Engineers":[2528,"RPI"],"Rhode Island Rams":[227,"URI"],"Rhodes Lynx":[2519,"RHDS"],"Rice Owls":[242,"RICE"],"Richmond Spiders":[257,"RICH"],"Ripon Red Hawks":[2891,"RIP"],"Robert Morris Colonials":[2523,"RMU"],"Rochester (NY) Yellow Jackets":[184,"URNY"],"Rockford Regents":[2524,"RFU"],"Rose Hulman Fightin' Engineers":[86,"RHIT"],"Rowan Profs":[2827,"ROW"],"Rutgers Scarlet Knights":[164,"RUTG"],"SE Louisiana Lions":[2545,"SELA"],"SMU Mustangs":[2567,"SMU"],"SUNY Cortland Red Dragons":[2782,"NYCL"],"SUNY Maritime Privateers":[2951,"NYMT"],"SUNY Morrisville Mustangs":[3110,"NYMS"],"Sacramento State Hornets":[16,"SAC"],"Sacred Heart Pioneers":[2529,"SHU"],"Saginaw Valley State Cardinals":[129,"SVSU"],"Saint Anselm Hawks":[2830,"SANS"],"Saint Francis (IN) Cougars":[2831,"SFIN"],"Saint Francis Red Flash":[2598,"SFPA"],"Saint John's (MN) Johnnies":[2600,"STJM"],"Saint Vincent Bearcats":[2614,"SVC"],"Salisbury Sea Gulls":[2532,"SAL"],"Salve Regina Seahawks":[2776,"SALV"],"Sam Houston Bearkats":[2534,"SHSU"],"Samford Bulldogs":[2535,"SAM"],"San Diego State Aztecs":[21,"SDSU"],"San Diego Toreros":[301,"USD"],"San Jos\u00e9 State Spartans":[23,"SJSU"],"Savannah State Tigers":[2542,"SAV"],"Seton Hill Griffins":[611,"SEHI"],"Sewanee Tigers":[2553,"SEWA"],"Shaw Bears":[2551,"SHAW"],"Shenandoah Hornets":[2828,"SHEN"],"Shepherd Rams":[2974,"SHEP"],"Shippensburg Raiders":[2559,"SHIP"],"Shorter Hawks":[2560,"SHOU"],"Simpson (IA) Storm":[2564,"SCIA"],"Sioux Falls Cougars":[2894,"SFU"],"Slippery Rock The Rock":[215,"SRU"],"South Alabama Jaguars":[6,"USA"],"South Carolina Gamecocks":[2579,"SC"],"South Carolina State Bulldogs":[2569,"SCST"],"South Dakota Coyotes":[233,"SDAK"],"South Dakota Mines Hardrockers":[613,"SDMT"],"South Dakota State Jackrabbits":[2571,"SDST"],"South Florida Bulls":[58,"USF"],"Southeast Missouri State Redhawks":[2546,"SEMO"],"Southeastern Oklahoma State Savage Storm":[199,"SEOK"],"Southern Arkansas Muleriders":[2568,"SAR"],"Southern Connecticut State Owls":[2583,"SCTS"],"Southern Illinois Salukis":[79,"SIU"],"Southern Jaguars":[2582,"SOU"],"Southern Miss Golden Eagles":[2572,"USM"],"Southern Nazarene Crimson Storm":[200,"SNU"],"Southern Oregon Raiders":[2584,"SOR"],"Southern Utah Thunderbirds":[253,"SUU"],"Southern Virginia Knights":[2896,"SOVA"],"Southwest Baptist Bearcats":[2586,"SWBU"],"Southwest Minnesota State Mustangs":[2587,"SWMS"],"Southwestern Oklahoma State Bulldogs":[2927,"SOSU"],"Southwestern U Pirates":[2588,"SWU"],"Springfield Pride":[81,"SPR"],"St. Ambrose Fighting Bees":[2591,"STAM"],"St. John Fisher Cardinals":[374,"STJF"],"St. Lawrence Saints":[2779,"USL"],"St. Norbert Green Knights":[2832,"STNC"],"St. Olaf Oles":[133,"OLAF"],"St. Scholastica Saints":[375,"CSS"],"St. Thomas Tommies":[2900,"STMN"],"Stanford Cardinal":[24,"STAN"],"Stephen F. Austin Lumberjacks":[2617,"SFA"],"Stetson Hatters":[56,"STET"],"Stevenson Mustangs":[471,"STVS"],"Stonehill Skyhawks":[284,"STO"],"Stony Brook Seawolves":[2619,"STBK"],"Sul Ross State Lobos":[2834,"SRST"],"Susquehanna River Hawks":[216,"SUSQ"],"Syracuse Orange":[183,"SYR"],"TCU Horned Frogs":[2628,"TCU"],"Tarleton State Texans":[2627,"TAR"],"Temple Owls":[218,"TEM"],"Tennessee State Tigers":[2634,"TNST"],"Tennessee Tech Golden Eagles":[2635,"TNTC"],"Tennessee Volunteers":[2633,"TENN"],"Texas A&M Aggies":[245,"TA&M"],"Texas A&M-Kingsville Javelinas":[2658,"TAMK"],"Texas College Steers":[2637,"TXCL"],"Texas Longhorns":[251,"TEX"],"Texas Lutheran Bulldogs":[2639,"TXLU"],"Texas Southern Tigers":[2640,"TXSO"],"Texas State Bobcats":[326,"TXST"],"Texas Tech Red Raiders":[2641,"TTU"],"The Citadel Bulldogs":[2643,"CIT"],"The College of New Jersey Lions":[2442,"TCNJ"],"Thiel Tomcats":[2644,"THI"],"Tiffin Dragons":[2838,"TIFF"],"Toledo Rockets":[2649,"TOL"],"Towson Tigers":[119,"TOW"],"Trine Thunder":[2651,"TRNE"],"Trinity (CT) Bantams":[2977,"TCCT"],"Trinity (TX) Tigers":[386,"TUTX"],"Troy Trojans":[2653,"TROY"],"Truman State Bulldogs":[2654,"TRST"],"Tufts Jumbos":[112,"TUFT"],"Tulane Green Wave":[2655,"TULN"],"Tulsa Golden Hurricane":[202,"TLSA"],"Tusculum Pioneers":[2839,"TUSC"],"Tuskegee Golden Tigers":[2657,"TUSK"],"UAB Blazers":[5,"UAB"],"UAlbany Great Danes":[399,"UALB"],"UC Davis Aggies":[302,"UCD"],"UCF Knights":[2116,"UCF"],"UCLA Bruins":[26,"UCLA"],"UConn Huskies":[41,"CONN"],"UL Monroe Warhawks":[2433,"ULM"],"UMass Dartmouth Corsairs":[379,"MDAR"],"UNC Pembroke Braves":[2882,"UNCP"],"UNLV Rebels":[2439,"UNLV"],"USC Trojans":[30,"USC"],"UT Martin Skyhawks":[2630,"UTM"],"UT Permian Basin Falcons":[110243,"UTPB"],"UTEP Miners":[2638,"UTEP"],"UTSA Roadrunners":[2636,"UTSA"],"UVA Wise Cavaliers":[2842,"UVAW"],"Union Garnet Chargers":[237,"UNNY"],"University of Mary Marauders":[559,"MARY"],"Upper Iowa Peacocks":[389,"UIU"],"Ursinus Bears":[2667,"URSN"],"Utah State Aggies":[328,"USU"],"Utah Tech Trailblazers":[3101,"UTU"],"Utah Utes":[254,"UTAH"],"Utica Pioneers":[390,"UTIC"],"VMI Keydets":[2678,"VMI"],"Valdosta State Blazers":[2673,"VALD"],"Valparaiso Beacons":[2674,"VAL"],"Vanderbilt Commodores":[238,"VAN"],"Vermont State Castleton Spartans":[293,"VTSC"],"Villanova Wildcats":[222,"VILL"],"Virginia Cavaliers":[258,"UVA"],"Virginia State Trojans":[330,"VSU"],"Virginia Tech Hokies":[259,"VT"],"Virginia Union Panthers":[2676,"VUU"],"WPI Engineers":[2749,"WPI"],"WVU Tech Golden Bears":[2706,"WVUT"],"Wabash Little Giants":[89,"WAB"],"Wagner Seahawks":[2681,"WAG"],"Wake Forest Demon Deacons":[154,"WAKE"],"Walsh Cavaliers":[2682,"WLSH"],"Wartburg Knights":[2685,"WTBG"],"Washburn Ichabods":[2687,"WSBN"],"Washington & Jefferson Presidents":[2686,"W&J"],"Washington Huskies":[264,"WASH"],"Washington St. Louis Bears":[143,"WUMO"],"Washington State Cougars":[265,"WSU"],"Washington and Lee Generals":[2688,"W&L"],"Wayne State (MI) Warriors":[131,"WSMI"],"Wayne State (NE) Wildcats":[2844,"WSNE"],"Waynesburg Yellow Jackets":[2845,"WAYN"],"Weber State Wildcats":[2692,"WEB"],"Wesleyan (CT) Cardinals":[336,"WSCT"],"West Alabama Tigers":[2695,"UWA"],"West Chester Golden Rams":[223,"WCHT"],"West Florida Argonauts":[110242,"UWF"],"West Georgia Wolves":[2698,"WGA"],"West Liberty Hilltoppers":[2699,"WLU"],"West Texas Buffaloes":[2704,"WTAM"],"West Virginia Mountaineers":[277,"WVU"],"West Virginia State Yellow Jackets":[2707,"WVSU"],"West Virginia Wesleyan Bobcats":[455,"WVWC"],"Western Carolina Catamounts":[2717,"WCU"],"Western Colorado Mountaineers":[2714,"WCOL"],"Western Connecticut State Wolves":[2843,"WCSU"],"Western Illinois Leathernecks":[2710,"WIU"],"Western Kentucky Hilltoppers":[98,"WKU"],"Western Michigan Broncos":[2711,"WMU"],"Western New England Golden Bears":[2702,"WNE"],"Western New Mexico Mustangs":[2703,"WNMU"],"Western Oregon Wolves":[2848,"WORU"],"Westfield State Owls":[2909,"WFST"],"Westminster (MO) Blue Jays":[433,"WCMO"],"Westminster (PA) Titans":[2849,"WCPA"],"Wheaton (IL) Thunder":[396,"WCIL"],"Wheeling Cardinals":[112335,"WHLG"],"Whittier Poets":[2850,"WHTR"],"Whitworth Pirates":[2721,"WHIW"],"Widener Pride":[2725,"WIDE"],"Wilkes Colonels":[398,"WILK"],"Willamette Bearcats":[2930,"WLMT"],"William & Mary Tribe":[2729,"W&M"],"William Jewell Cardinals":[2911,"WJC"],"William Paterson Pioneers":[2970,"WPU"],"Williams Ephs":[2731,"WLM"],"Wilmington (OH) Fightin' Quakers":[2733,"WCOH"],"Wingate Bulldogs":[351,"WINU"],"Winona State Warriors":[2851,"WNST"],"Winston-Salem State Rams":[2736,"WSSU"],"Wisconsin Badgers":[275,"WIS"],"Wisconsin Eau Claire Blugolds":[2738,"UWEC"],"Wisconsin La Crosse Eagles":[2740,"UWL"],"Wisconsin Lutheran Warriors":[2741,"WLC"],"Wisconsin Oshkosh Titans":[271,"UWO"],"Wisconsin Platteville Pioneers":[272,"UWP"],"Wisconsin River Falls Falcons":[2723,"UWRF"],"Wisconsin Stevens Point Pointers":[2743,"UWSP"],"Wisconsin Stout Blue Devils":[2744,"UWST"],"Wisconsin Whitewater Warhawks":[2745,"UWW"],"Wittenberg Tigers":[2746,"WITT"],"Wofford Terriers":[2747,"WOF"],"Wooster Fighting Scots":[2748,"WOO"],"Worcester State Lancers":[402,"WORC"],"Wyoming Cowboys":[2751,"WYO"],"Yale Bulldogs":[43,"YALE"],"Youngstown State Penguins":[2754,"YSU"]}
+  };
+
+  function esc(v) {
+    return String(v).replace(/[&<>"']/g, c => (
+      { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+  }
+
+  // Odds API team names match ESPN displayName, which is why a plain lookup works.
+  function teamArt(league, name) {
+    if (league === 'nfl') {
+      const abbr = TEAM_ART.nfl[name];
+      return abbr ? { logo: `https://a.espncdn.com/i/teamlogos/nfl/500/${abbr}.png`, abbr: abbr.toUpperCase() } : null;
+    }
+    const e = TEAM_ART.cfb[name];
+    return e ? { logo: `https://a.espncdn.com/i/teamlogos/ncaa/500/${e[0]}.png`, abbr: e[1] } : null;
+  }
+
+  // School marks are drawn for white backgrounds and several are dark navy, which
+  // disappears against a dark panel — hence the light disc behind every logo.
+  function teamMark(league, name) {
+    const art = teamArt(league, name);
+    if (!art) {
+      const abbr = String(name).replace(/[^A-Za-z ]/g, '').split(/\s+/)
+        .map(w => w[0] || '').join('').slice(0, 4).toUpperCase();
+      return `<span class="tmark tmark-fallback" title="${esc(name)}">${esc(abbr)}</span>`;
+    }
+    return `<span class="tmark" data-abbr="${esc(art.abbr)}" title="${esc(name)}">`
+         + `<img class="tlogo" src="${art.logo}" alt=""></span>`;
+  }
+
+  function matchupCell(league, away, home) {
+    return `<span class="matchup">${teamMark(league, away)}<span class="mteam">${esc(away)}</span>`
+         + `<span class="mat">@</span>${teamMark(league, home)}<span class="mteam">${esc(home)}</span></span>`;
+  }
+
+  // A logo that 404s becomes the team's abbreviation rather than a broken image.
+  function wireLogoFallbacks(root) {
+    root.querySelectorAll('img.tlogo').forEach(img => {
+      img.addEventListener('error', () => {
+        const chip = img.parentNode;
+        if (!chip) return;
+        chip.classList.add('tmark-fallback');
+        chip.textContent = chip.dataset.abbr || '?';
+      }, { once: true });
+    });
+  }
+
 
 // Frequency of exact final margins — drives push probability and key-number warnings.
 const MARGIN_FREQ = {
@@ -1233,7 +1324,7 @@ function renderBoard() {
         <tbody>${hits.map((o, i) => `
           <tr class="${i === 0 ? 'best' : ''}">
             <td>${i + 1}</td>
-            <td>${o.game.away_team} @ ${o.game.home_team}</td>
+            <td>${matchupCell(lg, o.game.away_team, o.game.home_team)}</td>
             <td><strong>${betLabel(o)}</strong></td>
             <td>${o.row.book}</td>
             <td class="num">${fmtPrice(o.row.price)}</td>
@@ -1250,6 +1341,7 @@ function renderBoard() {
   });
 
   wrap.innerHTML = blocks.join('');
+  wireLogoFallbacks(wrap);
 
   wrap.querySelectorAll('[data-add]').forEach(btn => {
     const [lg, idx] = btn.dataset.add.split('|');
@@ -1499,7 +1591,7 @@ function renderPlanner() {
         </tr></thead>
         <tbody>${card.map((b, i) => `
           <tr>
-            <td>${b.away} @ ${b.home} <span class="pill ${b.league}">${b.league.toUpperCase()}</span></td>
+            <td>${matchupCell(b.league, b.away, b.home)} <span class="pill ${b.league}">${b.league.toUpperCase()}</span></td>
             <td><strong>${b.label}</strong></td>
             <td>${b.book}</td>
             <td class="num">${fmtPrice(b.price)}</td>
@@ -1516,6 +1608,7 @@ function renderPlanner() {
       </div>
     </div>`;
 
+  wireLogoFallbacks(wrap);
   wrap.querySelectorAll('[data-drop]').forEach(btn =>
     btn.addEventListener('click', () => dropFromCard(btn.dataset.drop)));
   $('printCard').addEventListener('click', () => window.print());
@@ -1935,7 +2028,7 @@ function init() {
   $('bankroll').value = store.get('bankroll', 1000);
   $('kellyFrac').value = store.get('kellyFrac', '0.25');
 
-  const theme = store.get('theme', 'light');
+  const theme = store.get('theme', 'dark');
   document.documentElement.dataset.theme = theme;
   $('themeBtn').textContent = theme === 'light' ? 'Dark' : 'Light';
 
