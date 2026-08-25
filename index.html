@@ -409,6 +409,7 @@
       why it's an outlier before you fire.
     </div>
   </div>
+  <div id="gapWrap"></div>
   <div id="boardWrap"></div>
 </section>
 
@@ -517,6 +518,7 @@
         <label>Regions</label>
         <select id="regionSel">
           <option value="us">US books — 1×</option>
+          <option value="us,us_ex">US + exchanges (Kalshi, Polymarket) — 2×</option>
           <option value="us,eu">US + EU (adds Pinnacle) — 2×</option>
           <option value="us,us2">US + secondary US books — 2×</option>
           <option value="us,eu,us_ex">US + EU + exchanges — 3×</option>
@@ -640,6 +642,19 @@
         <input id="sharpWeight" type="number" step="0.5" min="1" value="4">
         <span class="hint">1 = treat all books equally</span>
       </div>
+      <div class="form-group">
+        <label>Kalshi fee coefficient</label>
+        <input id="kalshiFee" type="number" step="0.01" min="0" value="0.07">
+        <span class="hint">fee ≈ k × P × (1−P) per contract</span>
+      </div>
+    </div>
+    <div class="callout info" style="margin-top:14px">
+      <strong>Why exchanges need a fee model</strong>
+      An event contract carries no vig, so de-vigging one finds almost no hold — because there isn't
+      any. The cost arrives as a separate trading fee instead. Left unmodelled, every Kalshi price
+      would look like a free 2–3% edge and swamp the board. At k = 0.07 the fee peaks near 1.75¢ per
+      contract at even money, still well inside a sportsbook's hold. Verify the current figure against
+      your platform — Polymarket and Novig default to zero here.
     </div>
     <div class="callout info" style="margin-top:14px">
       <strong>What the sharp weight does</strong>
@@ -778,17 +793,21 @@ const FACTORS = [
 ];
 const RATING_TEXT = { '-2':'Strongly against', '-1':'Slightly against', '0':'Neutral', '1':'Slightly favors', '2':'Strongly favors' };
 
-const DEFAULT_PARAMS = { sdNflMargin:13.5, sdNflTotal:10.5, maxLeanNfl:3, sdCfbMargin:16, sdCfbTotal:13, maxLeanCfb:5, sharpWeight:4 };
+const DEFAULT_PARAMS = { sdNflMargin:13.5, sdNflTotal:10.5, maxLeanNfl:3, sdCfbMargin:16, sdCfbTotal:13, maxLeanCfb:5, sharpWeight:4, kalshiFee:0.07 };
 
 /* Book quality tiers. Sharp books make the market; retail books copy them and shade
    toward public money. Pooling both into one flat median lets seven retail books
    outvote the two that actually know something — so weight the consensus instead.
    You want to bet the retail book that hasn't caught up, not the sharp outlier. */
 const BOOK_TIER = {
-  // Market makers and exchanges — these set the number.
-  pinnacle:'sharp', lowvig:'sharp', betonlineag:'sharp', novig:'sharp', prophetx:'sharp',
+  // Market makers — these set the number.
+  pinnacle:'sharp', lowvig:'sharp', betonlineag:'sharp',
   betfair_ex_uk:'sharp', betfair_ex_eu:'sharp', betfair_ex_au:'sharp', matchbook:'sharp',
   betanysports:'sharp', betcris:'sharp',
+  // Event-contract exchanges. Two-sided, near-zero spread, fee charged on the trade
+  // rather than baked into the price — so they need their own pricing path.
+  kalshi:'exchange', polymarket:'exchange', novig:'exchange',
+  prophetx:'exchange', betopenly:'exchange',
   // Reasonably quick, not market makers.
   bookmaker:'mid', everygame:'mid', bovada:'mid', mybookieag:'mid', betus:'mid',
   superbook:'mid', circasports:'mid',
@@ -801,8 +820,32 @@ const BOOK_TIER = {
 function bookTier(key) { return BOOK_TIER[key] || 'retail'; }
 function bookWeight(key) {
   const t = bookTier(key);
-  if (t === 'sharp') return state.params.sharpWeight;
+  if (t === 'sharp' || t === 'exchange') return state.params.sharpWeight;
   return t === 'mid' ? 1.5 : 1;
+}
+function isExchange(key) { return bookTier(key) === 'exchange'; }
+
+/* Exchange fees.
+
+   An exchange price carries no vig — de-vigging one finds almost no hold, because there
+   isn't any. The cost arrives as a separate trading fee. Ignore it and every exchange
+   quote looks like a free 2-3% edge, which would flood the board with fakes.
+
+   Kalshi charges roughly k * P * (1-P) per contract, k = 0.07, peaking near 1.75c at even
+   money. Buying a contract at P costs P and pays 1, so the fee folds into the effective
+   price: dec_eff = dec / (1 + k*(1-P)). Platforms differ, so the coefficient is per-book
+   and the Kalshi figure is editable in Settings. */
+const EXCHANGE_FEE_K = { kalshi: 0.07, polymarket: 0, novig: 0, prophetx: 0, betopenly: 0 };
+function feeCoefficient(key) {
+  if (key === 'kalshi') return state.params.kalshiFee;
+  return EXCHANGE_FEE_K[key] !== undefined ? EXCHANGE_FEE_K[key] : 0;
+}
+// Decimal odds after the platform's trading fee.
+function netDecimal(dec, key) {
+  const k = feeCoefficient(key);
+  if (!k || !(dec > 1)) return dec;
+  const P = 1 / dec;                       // contract price in dollars
+  return dec / (1 + k * (1 - P));
 }
 
 // Weighted median: the value where cumulative weight crosses half the total.
@@ -914,7 +957,7 @@ function selectedMarkets() {
   const m = store.get('markets', ['spreads', 'totals']);
   return m.length ? m : ['spreads'];
 }
-function regionCount() { return store.get('regions', 'us,eu').split(',').length; }
+function regionCount() { return store.get('regions', 'us,us_ex').split(',').length; }
 function creditsPerLeague() { return selectedMarkets().length * regionCount(); }
 
 /* ============================================================
@@ -1070,7 +1113,7 @@ async function fetchOdds() {
     $('loadStatus').className = 'status-line err';
     return;
   }
-  const regions = store.get('regions', 'us,eu');
+  const regions = store.get('regions', 'us,us_ex');
   const markets = selectedMarkets().join(',');
   const url = `https://api.the-odds-api.com/v4/sports/${SPORT_KEY[state.league]}/odds`
             + `?apiKey=${encodeURIComponent(key)}&regions=${regions}`
@@ -1264,7 +1307,14 @@ function myProbAt(line, market, side, est, league) {
 function evaluateRow(row, market, side, est, league, bankroll, kf) {
   const line = market === 'h2h' ? 0 : row.line;
   const p = myProbAt(line, market, side, est, league);
-  const dec = americanToDecimal(row.price);
+  const exch = isExchange(row.key);
+  // Event contracts settle binary — there is no push. Contract wording is typically
+  // "by N or more", so mass landing exactly on the number is a loss. Folding it into
+  // the loss side errs toward understating the edge rather than inventing one.
+  if (exch && p.push > 0) { p.lose += p.push; p.push = 0; }
+  const grossDec = americanToDecimal(row.price);
+  const dec = exch ? netDecimal(grossDec, row.key) : grossDec;
+  const feeDrag = exch ? (grossDec - dec) / grossDec : 0;
   const b = dec - 1;
   const ev = p.win * b - p.lose;                 // per $1 staked (a push returns the stake, EV 0)
   // Kelly with three outcomes. f = EV/b only holds when the bet cannot push; a push
@@ -1277,8 +1327,8 @@ function evaluateRow(row, market, side, est, league, bankroll, kf) {
   // directly comparable to break-even and to a de-vigged market price — both of which
   // also exclude pushes. The raw win probability is not.
   const condProb = (p.win + p.lose) > 0 ? p.win / (p.win + p.lose) : 0;
-  return { ...row, myProb: condProb, rawWin: p.win, pushProb: p.push, dec, ev, edge: ev,
-           kelly, stake, breakeven, fairPrice: probToAmerican(condProb) };
+  return { ...row, myProb: condProb, rawWin: p.win, pushProb: p.push, dec, grossDec, exch,
+           feeDrag, ev, edge: ev, kelly, stake, breakeven, fairPrice: probToAmerican(condProb) };
 }
 
 /* ============================================================
@@ -1420,6 +1470,102 @@ function scanSlate(league, bankroll, kf, minEdge) {
   return [...bestPerBet.values()].sort((a, b) => b.row.ev - a.row.ev);
 }
 
+/* ---- Cross-market gaps ---------------------------------------------------
+   Book-versus-exchange disagreements run wider and last longer than book-versus-book,
+   because the two crowds are different: recreational money on one side, traders on the
+   other. When the best price on each side implies less than 100% combined — after fees —
+   both sides can be backed for a locked profit regardless of result. */
+function findGaps(league) {
+  const out = [];
+  (state.games[league] || []).forEach(game => {
+    ['spreads', 'totals', 'h2h'].forEach(market => {
+      const H = collectQuotes(game, market, 'home');
+      const A = collectQuotes(game, market, 'away');
+      if (!H.length || !A.length) return;
+
+      // Only oppose quotes that are genuinely two sides of the same contract.
+      H.forEach(h => {
+        A.forEach(a => {
+          if (market !== 'h2h') {
+            const same = market === 'totals' ? (h.line === a.line) : (h.line === -a.line);
+            if (!same) return;
+          }
+          if (h.key === a.key) return;                  // same venue isn't a gap
+          const dh = netDecimal(americanToDecimal(h.price), h.key);
+          const da = netDecimal(americanToDecimal(a.price), a.key);
+          const sum = 1/dh + 1/da;
+          if (sum >= 1.005) return;                     // no edge once fees land
+          const profit = 1 - sum;
+          const stakeH = (1/dh) / sum, stakeA = (1/da) / sum;
+          const crossVenue = isExchange(h.key) !== isExchange(a.key);
+          out.push({ game, market, league, h, a, dh, da, sum, profit, stakeH, stakeA, crossVenue,
+                     line: market === 'h2h' ? null : h.line });
+        });
+      });
+    });
+  });
+  // Best gap per game+market only.
+  const best = new Map();
+  out.forEach(g => {
+    const k = `${gameKeyOf(g.game)}|${g.market}`;
+    const prev = best.get(k);
+    if (!prev || g.profit > prev.profit) best.set(k, g);
+  });
+  return [...best.values()].sort((x, y) => y.profit - x.profit);
+}
+
+function gapSideLabel(g, which) {
+  const t = which === 'h' ? g.game.home_team : g.game.away_team;
+  if (g.market === 'totals') return `${which === 'h' ? 'Over' : 'Under'} ${Math.abs(g.line)}`;
+  if (g.market === 'h2h') return `${t} ML`;
+  return `${t} ${fmtLine(which === 'h' ? g.line : -g.line)}`;
+}
+
+function renderGaps() {
+  const wrap = $('gapWrap');
+  if (!wrap) return;
+  const all = ['nfl', 'cfb'].flatMap(lg => findGaps(lg));
+  all.sort((a, b) => b.profit - a.profit);
+  const loaded = (state.games.nfl || []).length + (state.games.cfb || []).length;
+
+  if (!all.length) {
+    wrap.innerHTML = `<div class="section">
+      <div class="section-title"><span>Cross-market gaps</span>
+        <span class="section-note">${loaded} games scanned</span></div>
+      <div class="empty-state">No two-sided gap on the board right now.<br>
+      These are rare and short-lived — finding none is the normal result.</div></div>`;
+    return;
+  }
+  wrap.innerHTML = `<div class="section">
+    <div class="section-title">
+      <span>Cross-market gaps — ${all.length}</span>
+      <span class="section-note">both sides backed, profit locked regardless of result</span>
+    </div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Matchup</th><th>Back</th><th>Venue</th><th class="num">Price</th>
+        <th>Against</th><th>Venue</th><th class="num">Price</th>
+        <th class="num">Locked</th><th class="num">Split</th></tr></thead>
+      <tbody>${all.slice(0, 12).map(g => `
+        <tr class="${g.crossVenue ? 'best' : ''}">
+          <td>${matchupCell(g.league, g.game.away_team, g.game.home_team)}</td>
+          <td><strong>${gapSideLabel(g,'h')}</strong></td>
+          <td>${g.h.book}${isExchange(g.h.key) ? ' <span class="pill sharp">EXCH</span>' : ''}</td>
+          <td class="num">${fmtPrice(g.h.price)}</td>
+          <td><strong>${gapSideLabel(g,'a')}</strong></td>
+          <td>${g.a.book}${isExchange(g.a.key) ? ' <span class="pill sharp">EXCH</span>' : ''}</td>
+          <td class="num">${fmtPrice(g.a.price)}</td>
+          <td class="num pos">+${pct(g.profit, 2)}</td>
+          <td class="num" style="color:var(--text-muted)">${Math.round(g.stakeH*100)}/${Math.round(g.stakeA*100)}</td>
+        </tr>`).join('')}</tbody>
+    </table></div>
+    <div class="callout"><strong>Read before chasing these</strong>
+      Profits are computed after modelled fees, but liquidity is not visible here — a price good for
+      20 contracts is often not good for 500, and a partial fill on one side leaves you with a plain
+      directional bet. Get the thinner side down first. Gaps also close in minutes, and exchange
+      contracts settle binary, so confirm the contract wording resolves the way you think it does.</div>
+  </div>`;
+}
+
 function betLabel(o) {
   const g = o.game;
   if (o.market === 'totals') return `${o.side === 'home' ? 'Over' : 'Under'} ${Math.abs(o.row.line)}`;
@@ -1494,6 +1640,7 @@ function renderBoard() {
   });
 
   wrap.innerHTML = blocks.join('');
+  renderGaps();
   wireLogoFallbacks(wrap);
 
   wrap.querySelectorAll('[data-add]').forEach(btn => {
@@ -2174,7 +2321,7 @@ function init() {
   if (state.quota.resetDay) $('resetDayInput').value = state.quota.resetDay;
   Object.keys(DEFAULT_PARAMS).forEach(k => { if ($(k)) $(k).value = state.params[k]; });
   $('apiKey').value = store.get('apiKey', '');
-  $('regionSel').value = store.get('regions', 'us,eu');
+  $('regionSel').value = store.get('regions', 'us,us_ex');
   if (!$('regionSel').value) $('regionSel').value = 'us,eu';   // saved value no longer offered
   const savedMkts = selectedMarkets();
   document.querySelectorAll('.mktChk').forEach(c => c.checked = savedMkts.includes(c.value));
@@ -2346,7 +2493,9 @@ function init() {
   $('saveParams').addEventListener('click', () => {
     Object.keys(DEFAULT_PARAMS).forEach(k => {
       const v = parseFloat($(k).value);
-      if (!isNaN(v) && v > 0) state.params[k] = v;
+      // Fees may legitimately be zero; the SDs and weights may not.
+      const floor = (k === 'kalshiFee') ? 0 : Number.MIN_VALUE;
+      if (!isNaN(v) && v >= floor) state.params[k] = v;
     });
     store.set('params', state.params);
     $('paramStatus').textContent = 'Parameters saved.';

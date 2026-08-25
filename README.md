@@ -51,6 +51,33 @@ rather than probability space. Two consequences:
 Pinnacle is worth fetching as a *price signal* even if you can't bet there — use the book filter to
 keep it out of recommendations while it still anchors the consensus.
 
+### Prediction markets
+
+Kalshi, Polymarket, Novig and ProphetX arrive through the same API under the `us_ex` region — no second
+integration. They're structurally different from sportsbooks in ways that matter:
+
+- **No vig.** You trade against other users, so de-vigging an exchange quote finds almost no hold —
+  because there isn't any.
+- **The cost is a separate trading fee.** Kalshi charges roughly `k × P × (1−P)` per contract with
+  k = 0.07, peaking near 1.75¢ at even money — well inside a typical 4–5% sportsbook hold.
+- **Binary settlement.** No pushes. Contracts are worded "by N or more", so mass landing exactly on the
+  number is treated as a loss, which errs toward understating an edge rather than inventing one.
+- **CFTC-regulated**, so they operate in states where sportsbooks can't.
+
+**The fee model is not optional.** Left out, every exchange quote looks like a free 2–3% edge and swamps
+the board — measured at 3.18% of phantom edge on a test quote. The coefficient is editable in Settings;
+Polymarket and Novig default to zero.
+
+### Cross-market gaps
+
+Book-versus-exchange disagreements run wider and last longer than book-versus-book, because the crowds
+are different — recreational money on one side, traders on the other. When the best price on each side
+implies under 100% combined *after fees*, both sides can be backed for a locked profit.
+
+Fees change these materially: a test gap prices at 1.84% with the fee model and 3.57% without, so a
+marginal "2% arb" is really a loss. Liquidity is the binding constraint the API can't show you — a price
+good for 20 contracts often isn't good for 500, and a partial fill on one side leaves a directional bet.
+
 ### Line movement and staleness
 
 Fetches already cost credits, so the app keeps snapshots of where the consensus sat and reports how far
