@@ -26,6 +26,38 @@ offer against it:
 - A reality-check panel compares your number to the de-vigged market consensus, and warns you when
   you disagree by enough that the input is the more likely culprit than the edge
 
+### How the consensus is built
+
+Not every book deserves an equal vote. Sharp books make the number; retail books copy it and shade
+toward public money. A flat median lets seven retail books outvote the two that actually know
+something, dragging the "consensus" toward retail pricing — the very thing you're trying to beat.
+
+So the consensus is a **weighted median of what each book's price implies**, in margin (or total) space
+rather than probability space. Two consequences:
+
+- **Every book contributes**, even on a fragmented board. Books aren't discarded for sitting off the
+  modal line — their price is inverted through the discrete model to a common footing first.
+- **Sharp books carry 4× weight** (tunable in Settings; 1 gives a flat median). At the default, two
+  sharp books outweigh seven retail ones, so the consensus is effectively "what the market makers
+  think," degrading gracefully to the wider market when no sharp book is present.
+
+| Sharp book | Region key | Notes |
+|---|---|---|
+| LowVig | `us` | already in a default US fetch |
+| BetOnline | `us` | already in a default US fetch |
+| Pinnacle | `eu` | the sharpest signal; doubles credit cost |
+| Novig / ProphetX | `us_ex` | exchanges |
+
+Pinnacle is worth fetching as a *price signal* even if you can't bet there — use the book filter to
+keep it out of recommendations while it still anchors the consensus.
+
+### Line movement and staleness
+
+Fetches already cost credits, so the app keeps snapshots of where the consensus sat and reports how far
+it has drifted since. A book still on an old number while the market has moved toward your side is a
+much stronger signal than a static outlier — that's the difference between a stale line and a book that
+simply disagrees. The board shows drift toward the bet side and how long ago each book last updated.
+
 ### Weekly Slate Planner
 
 Build a card from the Calibrator or the Best Board, then size the whole thing at once.

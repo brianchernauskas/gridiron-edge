@@ -165,6 +165,7 @@
   .pill.nfl { background: rgba(29,78,216,.15); color: var(--nfl); }
   .pill.cfb { background: rgba(194,65,12,.15); color: var(--cfb); }
   .pill.best { background: var(--accent); color: #0b1120; }
+  .pill.sharp { background: rgba(29,78,216,.14); color: var(--nfl); font-size: .62rem; }
 
 
   .callout { border-left: 3px solid var(--warn); background: var(--warn-light); padding: 11px 14px; border-radius: 0 7px 7px 0; font-size: .84rem; margin-top: 14px; }
@@ -516,7 +517,9 @@
         <label>Regions</label>
         <select id="regionSel">
           <option value="us">US books — 1×</option>
+          <option value="us,eu">US + EU (adds Pinnacle) — 2×</option>
           <option value="us,us2">US + secondary US books — 2×</option>
+          <option value="us,eu,us_ex">US + EU + exchanges — 3×</option>
           <option value="us,eu,uk">US + EU + UK — 3×</option>
         </select>
       </div>
@@ -543,6 +546,25 @@
       only "Fetch live odds" spends credits. Pull a slate once, work the whole card off it, and refresh
       only when you need current numbers. At spreads + totals that's 4 credits for both leagues, or
       about 125 full scans a month.
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">
+      <span>Your sportsbooks</span>
+      <span class="section-note">the board only recommends bets you can actually place</span>
+    </div>
+    <p style="font-size:.85rem;color:var(--text-muted);margin-bottom:12px">
+      Tick the books you hold accounts at. Every book still counts toward the consensus — this only
+      controls where a <em>bet</em> can be recommended. Leave all unticked to see the whole board.
+      Sharp books are marked; they carry 4× weight in the consensus because they make the market
+      rather than copy it.
+    </p>
+    <div id="bookList" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px"></div>
+    <div class="form-actions">
+      <button class="btn-primary" id="saveBooks">Save books</button>
+      <button class="btn-secondary" id="allBooks">Clear all</button>
+      <span class="status-line" id="booksStatus"></span>
     </div>
   </div>
 
@@ -613,6 +635,18 @@
         <label>CFB max lean (pts)</label>
         <input id="maxLeanCfb" type="number" step="0.5" value="5">
       </div>
+      <div class="form-group">
+        <label>Sharp book weight</label>
+        <input id="sharpWeight" type="number" step="0.5" min="1" value="4">
+        <span class="hint">1 = treat all books equally</span>
+      </div>
+    </div>
+    <div class="callout info" style="margin-top:14px">
+      <strong>What the sharp weight does</strong>
+      Sharp books count this many times a retail book when the consensus is formed. At 4, two sharp
+      books outweigh seven retail ones — which is deliberate, since they make the number rather than
+      copy it, but it does mean the consensus becomes close to “what Pinnacle and LowVig think.”
+      Drop it toward 2 to let the wider market have a say, or to 1 for a flat median.
     </div>
     <div class="callout" style="margin-top:16px">
       <strong>Why these differ</strong>
@@ -744,7 +778,49 @@ const FACTORS = [
 ];
 const RATING_TEXT = { '-2':'Strongly against', '-1':'Slightly against', '0':'Neutral', '1':'Slightly favors', '2':'Strongly favors' };
 
-const DEFAULT_PARAMS = { sdNflMargin:13.5, sdNflTotal:10.5, maxLeanNfl:3, sdCfbMargin:16, sdCfbTotal:13, maxLeanCfb:5 };
+const DEFAULT_PARAMS = { sdNflMargin:13.5, sdNflTotal:10.5, maxLeanNfl:3, sdCfbMargin:16, sdCfbTotal:13, maxLeanCfb:5, sharpWeight:4 };
+
+/* Book quality tiers. Sharp books make the market; retail books copy them and shade
+   toward public money. Pooling both into one flat median lets seven retail books
+   outvote the two that actually know something — so weight the consensus instead.
+   You want to bet the retail book that hasn't caught up, not the sharp outlier. */
+const BOOK_TIER = {
+  // Market makers and exchanges — these set the number.
+  pinnacle:'sharp', lowvig:'sharp', betonlineag:'sharp', novig:'sharp', prophetx:'sharp',
+  betfair_ex_uk:'sharp', betfair_ex_eu:'sharp', betfair_ex_au:'sharp', matchbook:'sharp',
+  betanysports:'sharp', betcris:'sharp',
+  // Reasonably quick, not market makers.
+  bookmaker:'mid', everygame:'mid', bovada:'mid', mybookieag:'mid', betus:'mid',
+  superbook:'mid', circasports:'mid',
+  // Retail — where the beatable prices live.
+  draftkings:'retail', fanduel:'retail', betmgm:'retail', williamhill_us:'retail',
+  espnbet:'retail', fanatics:'retail', betrivers:'retail', ballybet:'retail',
+  hardrockbet:'retail', fliff:'retail', windcreek:'retail', unibet_us:'retail',
+  pointsbetus:'retail', wynnbet:'retail', tipico_us:'retail', sixbull:'retail', rebet:'retail'
+};
+function bookTier(key) { return BOOK_TIER[key] || 'retail'; }
+function bookWeight(key) {
+  const t = bookTier(key);
+  if (t === 'sharp') return state.params.sharpWeight;
+  return t === 'mid' ? 1.5 : 1;
+}
+
+// Weighted median: the value where cumulative weight crosses half the total.
+function weightedMedian(pairs) {          // [{v, w}, ...]
+  if (!pairs.length) return null;
+  const s = pairs.slice().sort((a, b) => a.v - b.v);
+  const total = s.reduce((a, p) => a + p.w, 0);
+  let acc = 0;
+  for (let i = 0; i < s.length; i++) {
+    acc += s[i].w;
+    if (acc >= total / 2) {
+      // Straddle the midpoint cleanly when weights split exactly.
+      if (Math.abs(acc - total / 2) < 1e-9 && i + 1 < s.length) return (s[i].v + s[i + 1].v) / 2;
+      return s[i].v;
+    }
+  }
+  return s[s.length - 1].v;
+}
 
 /* ============================================================
    State
@@ -838,7 +914,7 @@ function selectedMarkets() {
   const m = store.get('markets', ['spreads', 'totals']);
   return m.length ? m : ['spreads'];
 }
-function regionCount() { return store.get('regions', 'us').split(',').length; }
+function regionCount() { return store.get('regions', 'us,eu').split(',').length; }
 function creditsPerLeague() { return selectedMarkets().length * regionCount(); }
 
 /* ============================================================
@@ -994,7 +1070,7 @@ async function fetchOdds() {
     $('loadStatus').className = 'status-line err';
     return;
   }
-  const regions = store.get('regions', 'us');
+  const regions = store.get('regions', 'us,eu');
   const markets = selectedMarkets().join(',');
   const url = `https://api.the-odds-api.com/v4/sports/${SPORT_KEY[state.league]}/odds`
             + `?apiKey=${encodeURIComponent(key)}&regions=${regions}`
@@ -1019,6 +1095,7 @@ async function fetchOdds() {
     const data = await res.json();
     state.games[state.league] = data;
     store.set('cache_' + state.league, { ts: Date.now(), data });
+    recordSnapshot(state.league);       // free line-movement history
     if (!data.length) {
       $('loadStatus').textContent = 'No games with open lines right now for this league.';
       $('loadStatus').className = 'status-line err';
@@ -1084,6 +1161,10 @@ function collectQuotes(game, market, side) {
     const dv = devig(mine.price, other.price);
     rows.push({
       book: bk.title || bk.key,
+      key: bk.key,
+      tier: bookTier(bk.key),
+      weight: bookWeight(bk.key),
+      updated: m.last_update || bk.last_update || null,
       line: mine.point !== undefined ? mine.point : null,
       price: mine.price,
       marketProb: dv.a,
@@ -1211,13 +1292,40 @@ function evaluateRow(row, market, side, est, league, bankroll, kf) {
    ============================================================ */
 const MIN_BOOKS_FOR_CONSENSUS = 4;   // book under test + at least 3 others
 
-function marketConsensus(game, market, side, excludeBook) {
+// Convert one book's quote into the margin (or total) its price implies, in home terms.
+function quoteToNumber(q, market, side, league) {
+  if (market === 'totals') {
+    const sd = league === 'nfl' ? state.params.sdNflTotal : state.params.sdCfbTotal;
+    const z = invNormCdf(q.marketProb);
+    return side === 'home' ? q.line + sd*z : q.line - sd*z;
+  }
+  const sd = league === 'nfl' ? state.params.sdNflMargin : state.params.sdCfbMargin;
+  const line = market === 'h2h' ? 0 : q.line;
+  const mSide = impliedMarginDiscrete(q.marketProb, sd, league, line);
+  return side === 'home' ? mSide : -mSide;
+}
+
+// Consensus as a weighted median of what every book's price implies, rather than a
+// flat median of the subset sitting on the modal line. Using implied numbers instead
+// of raw probabilities lets books on different lines all contribute, and the tier
+// weights stop a crowd of retail books from outvoting the market makers.
+function marketConsensus(game, market, side, excludeBook, league) {
   const quotes = collectQuotes(game, market, side).filter(q => q.book !== excludeBook);
   if (quotes.length < MIN_BOOKS_FOR_CONSENSUS - 1) return null;
-  const L0 = market === 'h2h' ? 0 : modal(quotes.filter(q => q.line !== null).map(q => q.line));
-  const at = market === 'h2h' ? quotes : quotes.filter(q => q.line === L0);
-  if (at.length < 2) return null;
-  return { line: L0, prob: median(at.map(q => q.marketProb)), n: at.length, pool: quotes.length };
+
+  const pairs = quotes.map(q => ({ v: quoteToNumber(q, market, side, league), w: q.weight }));
+  const num = weightedMedian(pairs);
+  if (num === null || !isFinite(num)) return null;
+
+  const sharpN = quotes.filter(q => q.tier === 'sharp').length;
+  const lines = quotes.filter(q => q.line !== null).map(q => q.line);
+  return {
+    number: num,                       // implied margin (home terms) or total
+    line: market === 'h2h' ? 0 : modal(lines),
+    n: quotes.length,
+    sharpN,
+    spread: lines.length ? Math.max(...lines) - Math.min(...lines) : 0
+  };
 }
 
 // Invert the discrete model: the margin whose conditional cover probability at `line`
@@ -1235,40 +1343,76 @@ function impliedMarginDiscrete(p, sd, league, line) {
   return (lo + hi) / 2;
 }
 
-// The margin (or total) the consensus price implies, expressed in home terms.
-// Spreads and moneylines invert the same discrete model used to price them, so the
-// scan stays self-consistent; totals invert the normal, matching how they're priced.
-function impliedNumber(market, side, cons, league) {
-  if (market === 'totals') {
-    const sd = league === 'nfl' ? state.params.sdNflTotal : state.params.sdCfbTotal;
-    const z = invNormCdf(cons.prob);
-    return side === 'home' ? cons.line + sd*z : cons.line - sd*z;
-  }
-  const sd = league === 'nfl' ? state.params.sdNflMargin : state.params.sdCfbMargin;
-  const line = market === 'h2h' ? 0 : cons.line;
-  const mSide = impliedMarginDiscrete(cons.prob, sd, league, line);
-  return side === 'home' ? mSide : -mSide;
+/* ---- Line movement -------------------------------------------------------
+   Every fetch already costs credits; throwing the previous slate away wastes the
+   one signal that distinguishes a stale book from a book that simply disagrees.
+   Snapshots record where the consensus sat, so drift can be measured for free. */
+const SNAP_MAX = 24;
+
+function snapKey(league) { return 'snap_' + league; }
+
+function recordSnapshot(league) {
+  const snaps = store.get(snapKey(league), []);
+  const now = Date.now();
+  const entry = { ts: now, n: {} };
+  (state.games[league] || []).forEach(game => {
+    ['spreads', 'totals'].forEach(market => {
+      const cons = marketConsensus(game, market, 'home', null, league);
+      if (cons) entry.n[`${gameKeyOf(game)}|${market}`] = +cons.number.toFixed(2);
+    });
+  });
+  if (!Object.keys(entry.n).length) return;
+  snaps.push(entry);
+  while (snaps.length > SNAP_MAX) snaps.shift();
+  store.set(snapKey(league), snaps);
 }
+
+// How far the consensus has moved since the oldest snapshot we still hold,
+// in home-margin (or total) terms. Positive means it moved toward the home side.
+function consensusDrift(league, game, market) {
+  const snaps = store.get(snapKey(league), []);
+  if (snaps.length < 2) return null;
+  const k = `${gameKeyOf(game)}|${market}`;
+  const first = snaps.find(s => s.n[k] !== undefined);
+  const last  = [...snaps].reverse().find(s => s.n[k] !== undefined);
+  if (!first || !last || first === last) return null;
+  return { move: last.n[k] - first.n[k], hours: (last.ts - first.ts) / 3600000 };
+}
+
+function staleMinutes(q) {
+  if (!q.updated) return null;
+  const t = new Date(q.updated).getTime();
+  if (isNaN(t)) return null;
+  return Math.max(0, Math.round((Date.now() - t) / 60000));
+}
+
+function myBooks() { return store.get('myBooks', []); }
 
 function scanSlate(league, bankroll, kf, minEdge) {
   const bestPerBet = new Map();
+  const only = myBooks();
   (state.games[league] || []).forEach(game => {
     ['spreads', 'totals', 'h2h'].forEach(market => {
       ['home', 'away'].forEach(side => {
         const quotes = collectQuotes(game, market, side);
         if (quotes.length < MIN_BOOKS_FOR_CONSENSUS) return;
+        const drift = consensusDrift(league, game, market === 'h2h' ? 'spreads' : market);
         quotes.forEach(q => {
-          const cons = marketConsensus(game, market, side, q.book);
-          if (!cons) return;
-          const est = impliedNumber(market, side, cons, league);
+          // Consensus is built from every book; the bet itself only counts at a
+          // book you can actually get down at.
+          if (only.length && !only.includes(q.key)) return;
+          const cons = marketConsensus(game, market, side, q.book, league);
+          if (!cons || cons.n < MIN_BOOKS_FOR_CONSENSUS - 1) return;
+          const est = cons.number;
           const row = evaluateRow(q, market, side, est, league, bankroll, kf);
           if (row.ev < minEdge) return;
-          // Keep only the single best book per distinct bet.
+          // Drift toward the side being bet, while this book lags, is the strong case.
+          const toSide = drift ? (side === 'home' ? drift.move : -drift.move) : 0;
           const key = `${game.id}|${market}|${side}`;
           const prev = bestPerBet.get(key);
-          if (!prev || row.ev > prev.row.ev) {
-            bestPerBet.set(key, { game, market, side, league, row, cons, est, books: quotes.length });
-          }
+          const cand = { game, market, side, league, row, cons, est, drift, toSide,
+                         stale: staleMinutes(q), books: quotes.length };
+          if (!prev || row.ev > prev.row.ev) bestPerBet.set(key, cand);
         });
       });
     });
@@ -1319,7 +1463,8 @@ function renderBoard() {
         <thead><tr>
           <th>#</th><th>Matchup</th><th>Bet</th><th>Book</th>
           <th class="num">Price</th><th class="num">Consensus</th><th class="num">Fair</th>
-          <th class="num">Edge</th><th class="num">Stake</th><th class="num">Books</th><th></th>
+          <th class="num">Edge</th><th class="num">Drift</th><th class="num">Age</th>
+          <th class="num">Stake</th><th class="num">Books</th><th></th>
         </tr></thead>
         <tbody>${hits.map((o, i) => `
           <tr class="${i === 0 ? 'best' : ''}">
@@ -1328,9 +1473,17 @@ function renderBoard() {
             <td><strong>${betLabel(o)}</strong></td>
             <td>${o.row.book}</td>
             <td class="num">${fmtPrice(o.row.price)}</td>
-            <td class="num" style="color:var(--text-muted)">${o.market === 'h2h' ? '' : (o.market === 'totals' ? Math.abs(o.cons.line) : fmtLine(o.cons.line)) + ' '}${probToAmerican(o.cons.prob)}</td>
+            <td class="num" style="color:var(--text-muted)">${
+              o.market === 'totals' ? o.cons.number.toFixed(1)
+              : (o.cons.number >= 0 ? 'H by ' : 'A by ') + Math.abs(o.cons.number).toFixed(1)
+            }${o.cons.sharpN ? ` <span class="pill sharp">${o.cons.sharpN} sharp</span>` : ''}</td>
             <td class="num">${o.row.fairPrice}</td>
             <td class="num pos">+${pct(o.row.ev)}</td>
+            <td class="num ${o.toSide > 0.15 ? 'pos' : o.toSide < -0.15 ? 'neg' : ''}"
+                style="${Math.abs(o.toSide) <= 0.15 ? 'color:var(--text-muted)' : ''}">${
+              o.drift ? (o.toSide >= 0 ? '+' : '−') + Math.abs(o.toSide).toFixed(1) : '—'}</td>
+            <td class="num" style="color:${o.stale !== null && o.stale > 20 ? 'var(--warn)' : 'var(--text-muted)'}">${
+              o.stale === null ? '—' : o.stale < 60 ? o.stale + 'm' : Math.floor(o.stale/60) + 'h'}</td>
             <td class="num">$${o.row.stake.toFixed(0)}</td>
             <td class="num" style="color:var(--text-muted)">${o.books}</td>
             <td><button class="btn-secondary" style="padding:3px 10px;font-size:.78rem"
@@ -2021,7 +2174,8 @@ function init() {
   if (state.quota.resetDay) $('resetDayInput').value = state.quota.resetDay;
   Object.keys(DEFAULT_PARAMS).forEach(k => { if ($(k)) $(k).value = state.params[k]; });
   $('apiKey').value = store.get('apiKey', '');
-  $('regionSel').value = store.get('regions', 'us');
+  $('regionSel').value = store.get('regions', 'us,eu');
+  if (!$('regionSel').value) $('regionSel').value = 'us,eu';   // saved value no longer offered
   const savedMkts = selectedMarkets();
   document.querySelectorAll('.mktChk').forEach(c => c.checked = savedMkts.includes(c.value));
   restoreCache();
@@ -2116,6 +2270,41 @@ function init() {
     syncMktCost();
   }));
   $('regionSel').addEventListener('change', syncMktCost);
+
+  // Book picker: books actually seen in fetched slates first, then the known list.
+  function renderBookList() {
+    const seen = new Map();
+    ['nfl', 'cfb'].forEach(lg => (state.games[lg] || []).forEach(g =>
+      (g.bookmakers || []).forEach(b => seen.set(b.key, b.title || b.key))));
+    Object.keys(BOOK_TIER).forEach(k => { if (!seen.has(k)) seen.set(k, k); });
+    const mine = myBooks();
+    $('bookList').innerHTML = [...seen.entries()]
+      .sort((a, b) => (bookTier(a[0]) === 'sharp' ? -1 : 0) - (bookTier(b[0]) === 'sharp' ? -1 : 0)
+                   || a[1].localeCompare(b[1]))
+      .map(([k, title]) => `
+        <label style="display:flex;align-items:center;gap:7px;font-size:.84rem;color:var(--text)">
+          <input type="checkbox" class="bookChk" value="${k}" ${mine.includes(k) ? 'checked' : ''}>
+          <span>${title}${bookTier(k) === 'sharp' ? ' <span class="pill sharp">SHARP</span>' : ''}</span>
+        </label>`).join('');
+  }
+  renderBookList();
+
+  $('saveBooks').addEventListener('click', () => {
+    const picked = [...document.querySelectorAll('.bookChk')].filter(c => c.checked).map(c => c.value);
+    store.set('myBooks', picked);
+    $('booksStatus').textContent = picked.length
+      ? `Saved — board limited to ${picked.length} book${picked.length === 1 ? '' : 's'}.`
+      : 'Saved — showing all books.';
+    $('booksStatus').className = 'status-line ok';
+    renderBoard();
+  });
+  $('allBooks').addEventListener('click', () => {
+    document.querySelectorAll('.bookChk').forEach(c => c.checked = false);
+    store.set('myBooks', []);
+    $('booksStatus').textContent = 'Cleared — showing all books.';
+    $('booksStatus').className = 'status-line';
+    renderBoard();
+  });
 
   $('saveResetDay').addEventListener('click', () => {
     const d = parseInt($('resetDayInput').value, 10);
