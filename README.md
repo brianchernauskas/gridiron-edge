@@ -101,6 +101,48 @@ sized roughly 30% smaller than equivalent independent bets, because they can't d
 Also reports the chance the card finishes down, the 90% outcome range, worst case, and flags correlated
 exposure (multiple bets on one game, a pile of overs, a card that's all favourites).
 
+### Track record
+
+Answers the one question the rest of the app can't: were the board's picks any good?
+
+Every time you fetch a slate, the top Best Board picks are written to a log at the price and line
+showing at that moment. Once the games finish, **Settle finished games** pulls the finals and grades
+them. Everything is scored **flat 1 unit per pick** — this measures whether the picks were right, not
+whether the sizing was, which is the Slate Planner's job.
+
+Three rules keep the record from flattering itself:
+
+- **A pick is written once.** Re-fetching the same slate bumps a "seen" counter instead of appending a
+  second row, so you cannot pad a record by reloading. A pick's identity is game + market + side, not
+  the line — a number drifting −3 → −3.5 is one opinion expressed twice, and counting it twice
+  double-weights it.
+- **Nothing is logged after kickoff.** Logging a game already under way would be choosing a bet with
+  information the board never had.
+- **A result you set by hand is never overwritten.** Correct a bad grade in the table and it sticks
+  through every later settle, marked `hand`.
+
+Weeks are anchored to Tuesday in **Eastern time**, so a Monday night game files with the Thursday it
+belongs to rather than opening a week of its own — and it does that regardless of where the viewer's
+own clock is set.
+
+**Settling costs 2 credits per league** with an open pick, and only ever calls the API when something
+is actually unsettled and already kicked off. A game still in progress reports `completed: false` and
+is skipped, so a half-time score can never land on the board. The scores endpoint looks back three
+days; anything older than that is only gradeable by hand, and the status line says so rather than
+failing quietly.
+
+**Read the numbers honestly.** At the 1–3% edge this board finds, hundreds of bets are needed before a
+win rate separates from noise, so the summary leads with expected-versus-actual: the model gave each
+pick a win probability at the time, and those sum to the wins it expected across exactly those bets.
+That is a far better-powered read than a W–L record, and it still wants a full season. The record also
+shows the hit rate against break-even at the prices actually taken, which is the number a win rate has
+to clear to mean anything.
+
+Exchange fees are already netted out of a winning payout, so a Kalshi win pays what it really pays.
+**Export CSV** dumps the whole log — one row per pick, with the score, result and units — if you would
+rather do your own analysis on it. Auto-logging can be switched off with the checkbox next to the
+settle button.
+
 ### Situational Scorer
 
 Ten weighted factors — rest, travel, weather, injuries, motivation, line movement vs. tickets, pace,
@@ -141,6 +183,11 @@ that in check:
 cost nothing; only "Fetch live odds" spends credits. One fetch pulls every game in the league and the
 selector then works entirely offline against that snapshot, so pull once per slate and work the whole
 card off it.
+
+**Settling the track record costs 2 credits per league**, and only when that league has a pick that
+has kicked off and is still ungraded. One settle after each slate finishes is enough — roughly 4
+credits a week for both leagues, or about 16 a month. It never calls the API with nothing to grade,
+and the button quotes the exact cost before you press it.
 
 The Settings tab shows the live credit cost of your current configuration and the age of each cached
 slate. There's also a manual line-entry path for when quota runs out or lines aren't posted yet.

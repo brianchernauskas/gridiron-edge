@@ -172,6 +172,21 @@
   .callout.info { border-left-color: var(--accent); background: var(--accent-light); }
   .callout strong { display: block; margin-bottom: 3px; }
 
+  .chk-inline { display: flex; align-items: center; gap: 6px; font-size: .82rem; color: var(--text-muted); }
+  .chk-inline input { width: auto; }
+  /* flex:none on both children — otherwise the table squeezes the select down to its
+     arrow on any row that also carries a score. */
+  .grade-sel { flex: none; width: 84px; padding: 3px 6px; font-size: .78rem; border-radius: 6px; }
+  /* Result and units are the whole point of this table, so buy them the width to stay
+     on screen: the record runs tighter than the board and carries the score inline. */
+  #recordWrap th, #recordWrap td { padding: 9px 7px; }
+  .result-cell { display: flex; align-items: center; gap: 6px; }
+  /* The bet rides under the game rather than in its own column: the label already
+     names the team, so a separate column repeated it and cost 200px the result and
+     units columns needed to stay on screen. */
+  .bet-line { margin-top: 2px; font-weight: 600; font-size: .84rem; }
+  .score-note { flex: none; color: var(--text-muted); font-size: .78rem; font-variant-numeric: tabular-nums; }
+
   .empty-state { text-align: center; padding: 42px 20px; color: var(--text-muted); font-size: .9rem; }
 
   /* Situational scorer */
@@ -249,6 +264,7 @@
   <button class="tab active" data-panel="calibrator">Calibrator</button>
   <button class="tab" data-panel="board">Best Board</button>
   <button class="tab" data-panel="planner">Slate Planner</button>
+  <button class="tab" data-panel="record">Track Record</button>
   <button class="tab" data-panel="situational">Situational Scorer</button>
   <button class="tab" data-panel="settings">Settings</button>
 </nav>
@@ -426,6 +442,41 @@
     </p>
   </div>
   <div id="plannerWrap"></div>
+</section>
+
+<!-- ============ TRACK RECORD ============ -->
+<section class="panel" id="panel-record">
+  <div class="section">
+    <div class="section-title">
+      <span>How the board's picks actually did</span>
+      <span class="section-note" id="recordSpan"></span>
+    </div>
+    <p style="font-size:.85rem;color:var(--text-muted);margin-bottom:14px">
+      Every time you fetch a slate, the top board picks are written here at the price and line showing
+      at that moment, then graded against the final score. Nothing is logged after kickoff, and a pick is
+      only ever written once &mdash; re-fetching the same slate bumps a &ldquo;seen&rdquo; count rather than
+      padding the record with a second copy of the same opinion. Everything is scored flat
+      <strong>1 unit per pick</strong>: the question this answers is whether the picks were right, not
+      whether the sizing was. That one is the Slate Planner's.
+    </p>
+    <div class="form-actions" style="margin-top:0">
+      <button class="btn-primary" id="settleBtn">Settle finished games</button>
+      <span class="hint">costs <span id="settleCost">&mdash;</span></span>
+      <label class="chk-inline">
+        <input type="checkbox" id="autoLogChk"> Log board picks on every fetch
+      </label>
+      <span class="status-line" id="settleStatus"></span>
+    </div>
+    <div class="callout" style="margin-top:16px">
+      <strong>A short record says almost nothing</strong>
+      At the 1&ndash;3% edge this board finds, it takes many hundreds of bets before a win rate separates
+      itself from noise. Twenty picks that went 12&ndash;8 is not evidence the board works, and 8&ndash;12
+      is not evidence it doesn't. Expected-versus-actual below is the more honest read, because it scores
+      every pick against what the model claimed at the time rather than against 50% &mdash; and even that
+      wants a full season before you lean on it.
+    </div>
+  </div>
+  <div id="recordWrap"></div>
 </section>
 
 <!-- ============ SITUATIONAL ============ -->
@@ -1139,11 +1190,13 @@ async function fetchOdds() {
     state.games[state.league] = data;
     store.set('cache_' + state.league, { ts: Date.now(), data });
     recordSnapshot(state.league);       // free line-movement history
+    const logged = logBoardPicks(state.league);   // snapshot the board's own picks for the record
     if (!data.length) {
       $('loadStatus').textContent = 'No games with open lines right now for this league.';
       $('loadStatus').className = 'status-line err';
     } else {
-      $('loadStatus').textContent = `Loaded ${data.length} games (${creditsPerLeague()} credits).`;
+      $('loadStatus').textContent = `Loaded ${data.length} games (${creditsPerLeague()} credits).`
+        + (logged ? ` ${logged} pick${logged === 1 ? '' : 's'} logged.` : '');
       $('loadStatus').className = 'status-line ok';
     }
     populateGames();
@@ -1155,6 +1208,8 @@ async function fetchOdds() {
     $('loadBtn').disabled = false;
     updateCostNote();
     renderCacheInfo();
+    renderRecord();
+    updateSettleCost();
   }
 }
 
@@ -2310,6 +2365,393 @@ function addManualBook() {
   render();
 }
 
+/* ============================================================
+   Track record — how the board's own picks actually did
+   ============================================================
+   Snapshot at fetch time, grade from the API's own finals. Three rules keep the
+   record honest and they are the whole design:
+
+     1. A pick is written once. A re-fetch that surfaces the same bet bumps a
+        "seen" counter instead of appending a second row, so a record cannot be
+        padded by reloading. The identity of a pick is game+market+side, not
+        game+market+side+line — a number that drifts from −3 to −3.5 is the same
+        opinion expressed twice, and counting it twice double-weights it.
+     2. Nothing is logged after kickoff. Logging a game already under way would
+        be picking a bet with information the board never had.
+     3. A result you set by hand is never overwritten by a later settle.
+
+   Flat 1 unit per pick throughout. Sizing lives on the Slate Planner. */
+
+const LOG_MAX = 2000;       // ~a season and a half of top-5s across both leagues
+const SCORES_DAYS = 3;      // the API's own ceiling on how far back /scores looks
+const SCORES_COST = 2;      // credits per call once daysFrom is set
+
+// Football weeks are anchored to Tuesday so that a Monday night game files with
+// the Thursday it belongs to instead of opening a week of its own. Works for both
+// leagues: CFB runs Tue–Sat, NFL Thu–Mon, and neither straddles a Tuesday.
+//
+// The anchor is Eastern, not the viewer's clock, because that is the calendar both
+// leagues schedule against. Read in local time, an 8:15pm ET Monday nightcap is
+// already Tuesday anywhere at UTC or east of it, and would file itself into the
+// following week — splitting one week's card across two rows of the record.
+const ET_PARTS = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York',
+  year: 'numeric', month: '2-digit', day: '2-digit', weekday: 'short' });
+const DOW = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+function weekKeyOf(iso) {
+  const d = iso ? new Date(iso) : new Date();
+  if (isNaN(d.getTime())) return 'unknown';
+  const p = {};
+  ET_PARTS.formatToParts(d).forEach(x => p[x.type] = x.value);
+  // Step back over a pure calendar date in UTC, so a DST boundary inside the week
+  // cannot shift the anchor by an hour and land it on the wrong day.
+  const t = new Date(Date.UTC(+p.year, +p.month - 1, +p.day));
+  t.setUTCDate(t.getUTCDate() - ((DOW[p.weekday] - 2 + 7) % 7));
+  return t.toISOString().slice(0, 10);
+}
+function weekLabel(key) {
+  if (key === 'unknown') return 'Undated';
+  const [y, m, d] = key.split('-').map(Number);
+  return 'Week of ' + new Date(Date.UTC(y, m - 1, d))
+    .toLocaleDateString([], { month: 'short', day: 'numeric', timeZone: 'UTC' });
+}
+
+function getLog() { return store.get('log', []); }
+function setLog(l) { store.set('log', l); }
+
+/* Snapshot the current top-N board picks. Called after every successful fetch. */
+function logBoardPicks(league) {
+  if (!store.get('autoLog', true)) return 0;
+  const n = parseInt($('boardCount').value, 10) || 5;
+  const minEdge = parseFloat($('boardMinEdge').value) / 100;
+  if (isNaN(minEdge)) return 0;
+  const bankroll = parseFloat($('bankroll').value) || 0;
+  const kf = parseFloat($('kellyFrac').value) || 0.25;
+
+  const log = getLog();
+  const byId = new Map(log.map(e => [e.id, e]));
+  const now = Date.now();
+  let added = 0;
+
+  scanSlate(league, bankroll, kf, minEdge).slice(0, n).forEach((o, i) => {
+    const kick = o.game.commence_time ? Date.parse(o.game.commence_time) : NaN;
+    if (!isNaN(kick) && kick <= now) return;              // rule 2
+    const line = o.market === 'h2h' ? 0 : o.row.line;
+    const id = `${gameKeyOf(o.game)}|${o.market}|${o.side}`;
+    const prev = byId.get(id);
+    if (prev) {                                           // rule 1
+      prev.seen = (prev.seen || 1) + 1;
+      prev.lastLine = line;
+      prev.lastPrice = o.row.price;
+      prev.lastSeenAt = now;
+      return;
+    }
+    const e = {
+      id, gameKey: gameKeyOf(o.game), league, sportKey: SPORT_KEY[league],
+      away: o.game.away_team, home: o.game.home_team,
+      commence: o.game.commence_time || null,
+      week: weekKeyOf(o.game.commence_time),
+      market: o.market, side: o.side, line,
+      price: o.row.price, book: o.row.book,
+      // Net of exchange fees, so a Kalshi win pays what it would really pay.
+      dec: o.row.dec,
+      label: betLabel(o), est: o.est, edge: o.row.ev, pWin: o.row.myProb,
+      rank: i + 1, books: o.books, loggedAt: now,
+      seen: 1, lastLine: line, lastPrice: o.row.price, lastSeenAt: now,
+      result: null, homeScore: null, awayScore: null, settledAt: null, manual: false
+    };
+    log.push(e); byId.set(id, e); added++;
+  });
+
+  while (log.length > LOG_MAX) log.shift();
+  setLog(log);
+  return added;
+}
+
+/* Grade one pick against a final. Sides are 'home'/'away' throughout; on totals
+   those mean Over/Under, matching collectQuotes. The stored line is always from
+   the bet's own side, so a cover is margin + line without any sign juggling. */
+function gradePick(e, hs, as) {
+  if (e.market === 'totals') {
+    const tot = hs + as;
+    if (tot === e.line) return 'push';
+    return ((tot > e.line) === (e.side === 'home')) ? 'win' : 'loss';
+  }
+  const margin = e.side === 'home' ? hs - as : as - hs;
+  if (e.market === 'h2h') return margin > 0 ? 'win' : margin === 0 ? 'push' : 'loss';
+  const r = margin + e.line;
+  return r > 0 ? 'win' : r === 0 ? 'push' : 'loss';
+}
+// A push returns the stake, so it risks nothing and pays nothing.
+function unitsOf(e) {
+  if (e.result === 'win') return (e.dec || americanToDecimal(e.price)) - 1;
+  if (e.result === 'loss') return -1;
+  return 0;
+}
+function scoreFor(g, team) {
+  const s = (g.scores || []).find(x => x.name === team);
+  const v = s ? parseInt(s.score, 10) : NaN;
+  return isNaN(v) ? null : v;
+}
+function openPicks(log, now) {
+  return log.filter(e => !e.result && e.commence && Date.parse(e.commence) < now);
+}
+function updateSettleCost() {
+  const el = $('settleCost');
+  if (!el) return;
+  const sports = new Set(openPicks(getLog(), Date.now()).map(e => e.sportKey));
+  el.textContent = sports.size ? `${sports.size * SCORES_COST} credits` : 'nothing to settle';
+}
+
+async function settleLog() {
+  const key = store.get('apiKey', '');
+  const st = $('settleStatus');
+  if (!key) {
+    st.textContent = 'No API key saved — add one on the Settings tab, or grade by hand in the table.';
+    st.className = 'status-line err'; return;
+  }
+  const log = getLog();
+  const now = Date.now();
+  const open = openPicks(log, now);
+  if (!open.length) {
+    st.textContent = 'Nothing to settle — every logged pick is either graded already or not yet played.';
+    st.className = 'status-line'; return;
+  }
+
+  $('settleBtn').disabled = true;
+  st.textContent = 'Fetching finals…'; st.className = 'status-line';
+  let graded = 0, pending = 0;
+  const failed = [];
+
+  for (const sport of [...new Set(open.map(e => e.sportKey))]) {
+    const url = `https://api.the-odds-api.com/v4/sports/${sport}/scores/`
+              + `?apiKey=${encodeURIComponent(key)}&daysFrom=${SCORES_DAYS}`;
+    try {
+      const res = await fetch(url);
+      const remain = res.headers.get('x-requests-remaining');
+      const used = res.headers.get('x-requests-used');
+      if (remain !== null) store.set('quota', remain);
+      if (used === null) store.set('spent', store.get('spent', 0) + SCORES_COST);
+      recordQuota(used, remain);
+      if (!res.ok) {
+        const txt = await res.text();
+        throw new Error(res.status === 401 ? 'key rejected (401)'
+                      : res.status === 429 ? 'quota exhausted (429)'
+                      : `HTTP ${res.status} — ${txt.slice(0, 80)}`);
+      }
+      const byId = new Map((await res.json()).map(g => [g.id, g]));
+      open.filter(e => e.sportKey === sport).forEach(e => {
+        const g = byId.get(e.gameKey);
+        if (!g) return;                                   // outside the window, or the id moved
+        if (!g.completed) { pending++; return; }           // never grade a game still running
+        const hs = scoreFor(g, g.home_team), as = scoreFor(g, g.away_team);
+        if (hs === null || as === null) { pending++; return; }
+        e.homeScore = hs; e.awayScore = as;
+        e.result = gradePick(e, hs, as);
+        e.settledAt = Date.now(); e.manual = false;
+        graded++;
+      });
+    } catch (err) {
+      failed.push(`${sport === SPORT_KEY.nfl ? 'NFL' : 'CFB'}: ${
+        err.message.includes('Failed to fetch') ? 'network/CORS error' : err.message}`);
+    }
+  }
+
+  setLog(log);
+  // Anything played longer ago than the API will look back is only ever gradeable by hand.
+  const stale = openPicks(getLog(), Date.now())
+    .filter(e => now - Date.parse(e.commence) > SCORES_DAYS * 864e5).length;
+
+  const bits = [];
+  if (graded) bits.push(`${graded} pick${graded === 1 ? '' : 's'} graded`);
+  if (pending) bits.push(`${pending} still in progress`);
+  if (stale) bits.push(`${stale} older than ${SCORES_DAYS} days — grade those by hand`);
+  if (failed.length) bits.push(failed.join('; '));
+  st.textContent = bits.length ? bits.join(' · ') : 'No finals available yet.';
+  st.className = 'status-line ' + (failed.length ? 'err' : graded ? 'ok' : '');
+
+  $('settleBtn').disabled = false;
+  renderRecord();
+  updateSettleCost();
+  updateCostNote();
+}
+
+/* Flat-unit accounting over a set of picks. Pushes resolve but risk nothing, so
+   they are counted and then held out of every rate below. */
+function logStats(list) {
+  const s = { n: list.length, w: 0, l: 0, p: 0, open: 0, units: 0, exp: 0, be: 0 };
+  list.forEach(e => {
+    if (!e.result) { s.open++; return; }
+    if (e.result === 'push' || e.result === 'void') { s.p++; return; }
+    if (e.result === 'win') s.w++; else s.l++;
+    s.units += unitsOf(e);
+    s.exp += (e.pWin || 0);
+    s.be += 1 / (e.dec || americanToDecimal(e.price));
+  });
+  s.resolved = s.w + s.l;
+  s.roi = s.resolved ? s.units / s.resolved : 0;
+  s.hit = s.resolved ? s.w / s.resolved : 0;
+  s.beRate = s.resolved ? s.be / s.resolved : 0;
+  return s;
+}
+function recFmt(s) { return `${s.w}–${s.l}${s.p ? '–' + s.p : ''}`; }
+
+const RESULT_OPTS = [['', '—'], ['win', 'Win'], ['loss', 'Loss'], ['push', 'Push'], ['void', 'Void']];
+
+function renderRecord() {
+  const wrap = $('recordWrap');
+  if (!wrap) return;
+  const log = getLog();
+  const span = $('recordSpan');
+
+  if (!log.length) {
+    wrap.innerHTML = `<div class="section"><div class="empty-state">
+      Nothing logged yet.<br><br>Fetch a slate on the <strong>Best Board</strong> tab and its top picks
+      land here automatically, ready to grade once the games have finished.</div></div>`;
+    if (span) span.textContent = '';
+    return;
+  }
+
+  const all = logStats(log);
+  const weeks = [...new Set(log.map(e => e.week))].sort().reverse();
+  if (span) span.textContent = `${log.length} pick${log.length === 1 ? '' : 's'} · ${weeks.length} week${weeks.length === 1 ? '' : 's'}`;
+
+  const edgeSum = log.reduce((a, e) => a + (e.edge || 0), 0) / log.length;
+
+  const summary = `
+    <div class="stats-row">
+      <div class="stat-card">
+        <div class="stat-label">Record</div>
+        <div class="stat-value">${all.resolved ? recFmt(all) : '—'}</div>
+        <div class="stat-sub">${all.resolved ? pct(all.hit, 1) + ' of graded picks' : 'nothing graded yet'}${
+          all.open ? ` · ${all.open} open` : ''}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Units</div>
+        <div class="stat-value ${all.units >= 0 ? 'pos' : 'neg'}">${all.units >= 0 ? '+' : '−'}${Math.abs(all.units).toFixed(2)}</div>
+        <div class="stat-sub">flat 1u · ${all.resolved} bet${all.resolved === 1 ? '' : 's'} risked</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">ROI</div>
+        <div class="stat-value ${all.roi >= 0 ? 'pos' : 'neg'}">${all.resolved ? (all.roi >= 0 ? '+' : '−') + pct(Math.abs(all.roi)) : '—'}</div>
+        <div class="stat-sub">per unit risked</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Beat the price?</div>
+        <div class="stat-value" style="font-size:1.05rem">${all.resolved
+          ? pct(all.hit, 1) + ' vs ' + pct(all.beRate, 1)
+          : '—'}</div>
+        <div class="stat-sub">actual vs break-even at the prices taken</div>
+      </div>
+    </div>`;
+
+  // The honest read: the model claimed a win probability for each pick at the time.
+  // Summing those gives the wins it expected across exactly these bets.
+  const calib = all.resolved ? `
+    <div class="callout info">
+      <strong>Expected ${all.exp.toFixed(1)} wins, got ${all.w}</strong>
+      Across ${all.resolved} graded pick${all.resolved === 1 ? '' : 's'} the model's own win probabilities
+      added up to ${all.exp.toFixed(1)}. It came back ${all.w}${
+        Math.abs(all.w - all.exp) < 1 ? ' — as close to its own claim as this sample can show'
+        : all.w > all.exp ? ` — running ${(all.w - all.exp).toFixed(1)} ahead of it`
+        : ` — running ${(all.exp - all.w).toFixed(1)} behind it`}.
+      The average edge claimed when these went on the board was ${pct(edgeSum)}; break-even at the prices
+      taken was ${pct(all.beRate, 1)}. A gap either way inside a couple of wins is noise, not signal.
+    </div>` : '';
+
+  const blocks = weeks.map(wk => {
+    const list = log.filter(e => e.week === wk).sort((a, b) =>
+      (Date.parse(a.commence) || 0) - (Date.parse(b.commence) || 0) || a.rank - b.rank);
+    const s = logStats(list);
+    const note = s.resolved
+      ? `${recFmt(s)} · ${s.units >= 0 ? '+' : '−'}${Math.abs(s.units).toFixed(2)}u${s.open ? ` · ${s.open} open` : ''}`
+      : `${list.length} pick${list.length === 1 ? '' : 's'} · not graded yet`;
+    return `
+      <div class="section">
+        <div class="section-title">
+          <span>${weekLabel(wk)}</span>
+          <span class="section-note ${s.resolved && s.units > 0 ? 'pos' : s.resolved && s.units < 0 ? 'neg' : ''}">${note}</span>
+        </div>
+        <div class="table-wrap"><table>
+          <thead><tr>
+            <th>Game &amp; bet</th><th>Book</th>
+            <th class="num">Price</th><th class="num">Edge</th>
+            <th>Result</th><th class="num">Units</th>
+          </tr></thead>
+          <tbody>${list.map(e => {
+            const u = e.result ? unitsOf(e) : null;
+            return `<tr>
+              <td>
+                <div>${matchupCell(e.league, e.away, e.home)} <span class="pill ${e.league}">${e.league.toUpperCase()}</span>${
+                  e.seen > 1 ? ` <span class="pill sharp" title="Surfaced on ${e.seen} separate fetches; logged once">×${e.seen}</span>` : ''}</div>
+                <div class="bet-line">${e.label}</div>
+              </td>
+              <td>${e.book}</td>
+              <td class="num">${fmtPrice(e.price)}</td>
+              <td class="num pos" title="The model gave this ${pct(e.pWin, 0)} at the price taken">+${pct(e.edge)}</td>
+              <td class="result-cell">
+                <select class="grade-sel" data-grade="${e.id}">
+                  ${RESULT_OPTS.map(([v, t]) =>
+                    `<option value="${v}"${(e.result || '') === v ? ' selected' : ''}>${t}</option>`).join('')}
+                </select>${e.homeScore === null ? ''
+                  : ` <span class="score-note">${e.awayScore}–${e.homeScore}</span>`}${
+                  e.manual ? ' <span class="pill sharp" title="Set by hand — a settle will not overwrite it">hand</span>' : ''}
+              </td>
+              <td class="num ${u === null ? '' : u > 0 ? 'pos' : u < 0 ? 'neg' : ''}">${
+                u === null ? '—' : (u > 0 ? '+' : u < 0 ? '−' : '') + Math.abs(u).toFixed(2)}</td>
+            </tr>`;
+          }).join('')}</tbody>
+        </table></div>
+      </div>`;
+  });
+
+  wrap.innerHTML = summary + calib + blocks.join('') + `
+    <div class="export-row">
+      <button class="btn-secondary" id="exportLog">Export CSV</button>
+      <button class="btn-secondary" id="clearLog">Clear log</button>
+    </div>`;
+
+  wireLogoFallbacks(wrap);
+  wrap.querySelectorAll('[data-grade]').forEach(sel =>
+    sel.addEventListener('change', () => setResultByHand(sel.dataset.grade, sel.value)));
+  $('exportLog').addEventListener('click', exportLog);
+  $('clearLog').addEventListener('click', () => {
+    if (!confirm('Delete every logged pick and its result? This cannot be undone.')) return;
+    setLog([]); renderRecord(); updateSettleCost();
+  });
+}
+
+// A hand-set result wins over the API, now and on every later settle.
+function setResultByHand(id, value) {
+  const log = getLog();
+  const e = log.find(x => x.id === id);
+  if (!e) return;
+  e.result = value || null;
+  e.manual = !!value;
+  e.settledAt = value ? Date.now() : null;
+  if (!value) { e.homeScore = null; e.awayScore = null; }
+  setLog(log);
+  renderRecord();
+  updateSettleCost();
+}
+
+function exportLog() {
+  const cols = ['week', 'commence', 'league', 'away', 'home', 'market', 'side', 'line', 'price',
+                'book', 'label', 'est', 'edge', 'pWin', 'rank', 'books', 'seen',
+                'awayScore', 'homeScore', 'result', 'units', 'manual'];
+  const esc = v => {
+    const s = v === null || v === undefined ? '' : String(v);
+    return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  };
+  const rows = getLog().map(e =>
+    cols.map(c => esc(c === 'units' ? (e.result ? unitsOf(e).toFixed(4) : '') : e[c])).join(','));
+  const blob = new Blob([cols.join(',') + '\n' + rows.join('\n')], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `gridiron-edge-log-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
 function init() {
   // Restore persisted state
   state.params = Object.assign({}, DEFAULT_PARAMS, store.get('params', {}));
@@ -2383,6 +2825,10 @@ function init() {
     $('boardQuota').textContent = $('quotaNote').textContent;
     renderBoard();
   });
+  $('autoLogChk').checked = store.get('autoLog', true);
+  $('autoLogChk').addEventListener('change', () => store.set('autoLog', $('autoLogChk').checked));
+  $('settleBtn').addEventListener('click', settleLog);
+
   $('boardRescan').addEventListener('click', renderBoard);
   $('boardCount').addEventListener('change', renderBoard);
   $('boardMinEdge').addEventListener('input', renderBoard);
@@ -2522,6 +2968,8 @@ function init() {
   render();
   renderBoard();
   renderPlanner();
+  renderRecord();
+  updateSettleCost();
 }
 
 init();
