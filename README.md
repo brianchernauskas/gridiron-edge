@@ -51,6 +51,15 @@ rather than probability space. Two consequences:
 Pinnacle is worth fetching as a *price signal* even if you can't bet there — use the book filter to
 keep it out of recommendations while it still anchors the consensus.
 
+### Spread or moneyline: one row per team
+
+A team's spread and its moneyline are two prices for the same opinion, so the board gives each team one
+row — whichever contract has the bigger edge — and shows the other in an **Other way** column with its
+best price, edge and win rate. It is tempting to take the spread when the moneyline flags, because it
+wins more often. It is usually a mistake: the edge lives in the contract a book mispriced, not in the
+team. A +170 moneyline the field prices at +150 is +8.8% at a 40% win rate; the same team's fairly priced
++3 at −110 wins 50% of decided bets and is −4.2%. Moneylines are fetched by default for this reason.
+
 ### Prediction markets
 
 Kalshi, Polymarket, Novig and ProphetX arrive through the same API under the `us_ex` region — no second
@@ -134,8 +143,10 @@ The `/odds` endpoint bills **credits = markets × regions**, not one credit per 
 three markets across US books costs 3 credits per league, so a both-league scan is 6. Two things keep
 that in check:
 
-**Fetch only the markets you price.** Spreads + totals is 2 credits per league — 4 for both, or about
-125 full scans a month. Adding moneyline raises it to 6 a scan and drops you to 83.
+**Fetch only the markets you price.** All three markets (the default) is 3 credits per league on US
+books — 6 for both, or about 83 full scans a month. Dropping moneyline makes it 4 a scan and 125 a
+month, at the cost of the Best Board's spread-versus-moneyline comparison. Every extra region
+multiplies all of this.
 
 **Slates are cached in the browser.** Reopening the app, reloading the page, and switching leagues all
 cost nothing; only "Fetch live odds" spends credits. One fetch pulls every game in the league and the

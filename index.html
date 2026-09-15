@@ -377,6 +377,11 @@
       other books, backs out the number that implies, then re-prices each book at its own line. A stale
       or generous book surfaces as +EV. Needs at least 4 books on a market to mean anything.
     </p>
+    <p style="font-size:.85rem;color:var(--text-muted);margin-bottom:14px">
+      A team's spread and moneyline are two prices for the same opinion, so each team gets one row: whichever
+      contract has the bigger edge. <strong>Other way</strong> shows the alternative's best price, edge and
+      win rate. A higher win rate is not a better bet — the edge lives in the contract a book mispriced.
+    </p>
     <div class="form-grid">
       <div class="form-group">
         <label>Picks per league</label>
@@ -548,8 +553,9 @@
       <strong>Making 500 credits last a season</strong>
       Slates are cached in this browser, so reopening the app or reloading the page costs nothing —
       only "Fetch live odds" spends credits. Pull a slate once, work the whole card off it, and refresh
-      only when you need current numbers. At spreads + totals that's 4 credits for both leagues, or
-      about 125 full scans a month.
+      only when you need current numbers. Cost is markets × regions per league: all three markets on US
+      books is 6 credits for both leagues (about 83 full scans a month); dropping moneyline makes it 4,
+      but the board can then no longer compare a team's spread against its moneyline.
     </div>
   </div>
 
@@ -956,7 +962,8 @@ function pct(x, d) { return (x * 100).toFixed(d === undefined ? 1 : d) + '%'; }
 // three markets across one region costs 3 credits, not 1 — so fetching only what you
 // actually price is the single biggest saving available.
 function selectedMarkets() {
-  const m = store.get('markets', ['spreads', 'totals']);
+  // Moneylines are on by default: the board compares each team's spread against its ML.
+  const m = store.get('markets', ['spreads', 'totals', 'h2h']);
   return m.length ? m : ['spreads'];
 }
 function regionCount() { return store.get('regions', 'us,us_ex').split(',').length; }
@@ -1471,7 +1478,6 @@ function scanSlate(league, bankroll, kf, minEdge) {
           if (!cons || cons.n < MIN_BOOKS_FOR_CONSENSUS - 1) return;
           const est = cons.number;
           const row = evaluateRow(q, market, side, est, league, bankroll, kf);
-          if (row.ev < minEdge) return;
           // Drift toward the side being bet, while this book lags, is the strong case.
           const toSide = drift ? (side === 'home' ? drift.move : -drift.move) : 0;
           const key = `${game.id}|${market}|${side}`;
@@ -1483,7 +1489,19 @@ function scanSlate(league, bankroll, kf, minEdge) {
       });
     });
   });
-  return [...bestPerBet.values()].sort((a, b) => b.row.ev - a.row.ev);
+  // A spread and a moneyline on the same team are two prices for one opinion. Keep whichever
+  // pays more for the risk and carry the other alongside it, so the board shows what a higher
+  // (or lower) win rate would cost. The edge lives in the mispriced contract, not the team.
+  const bySide = new Map();
+  bestPerBet.forEach(c => {
+    const k = `${gameKeyOf(c.game)}|${c.market === 'totals' ? 'totals' : 'team'}|${c.side}`;
+    const prev = bySide.get(k);
+    if (!prev) { bySide.set(k, c); return; }
+    const [keep, other] = c.row.ev > prev.row.ev ? [c, prev] : [prev, c];
+    keep.alt = other;
+    bySide.set(k, keep);
+  });
+  return [...bySide.values()].filter(c => c.row.ev >= minEdge).sort((a, b) => b.row.ev - a.row.ev);
 }
 
 /* ---- Cross-market gaps ---------------------------------------------------
@@ -1589,6 +1607,16 @@ function betLabel(o) {
   return o.market === 'h2h' ? `${team} ML` : `${team} ${fmtLine(o.row.line)}`;
 }
 
+// The same team's other contract — its best price, edge and win rate — so trading edge for
+// a higher chance of winning is visible rather than guessed at.
+function altCell(o) {
+  const a = o.alt;
+  if (o.market === 'totals' || !a) return '—';
+  const name = a.market === 'h2h' ? 'ML' : fmtLine(a.row.line);
+  return `${name} ${fmtPrice(a.row.price)} · <span class="${a.row.ev >= 0 ? 'pos' : 'neg'}">${
+    a.row.ev >= 0 ? '+' : '−'}${pct(Math.abs(a.row.ev))}</span> · ${pct(a.row.myProb, 0)} win`;
+}
+
 /* A book picked on Settings that is absent from every loaded slate silently shrinks the
    board, because the Odds API splits US books across regions. Name the region that carries it. */
 const BOOK_REGION = {
@@ -1669,7 +1697,8 @@ function renderBoard() {
         <thead><tr>
           <th>#</th><th>Matchup</th><th>Bet</th><th>Book</th>
           <th class="num">Price</th><th class="num">Consensus</th><th class="num">Fair</th>
-          <th class="num">Edge</th><th class="num">Drift</th><th class="num">Age</th>
+          <th class="num">Edge</th><th class="num">Win</th><th>Other way</th>
+          <th class="num">Drift</th><th class="num">Age</th>
           <th class="num">Stake</th><th class="num">Books</th><th></th>
         </tr></thead>
         <tbody>${hits.map((o, i) => `
@@ -1685,6 +1714,8 @@ function renderBoard() {
             }${o.cons.sharpN ? ` <span class="pill sharp">${o.cons.sharpN} sharp</span>` : ''}</td>
             <td class="num">${o.row.fairPrice}</td>
             <td class="num pos">+${pct(o.row.ev)}</td>
+            <td class="num">${pct(o.row.myProb, 0)}</td>
+            <td style="color:var(--text-muted);font-size:.8rem;white-space:nowrap">${altCell(o)}</td>
             <td class="num ${o.toSide > 0.15 ? 'pos' : o.toSide < -0.15 ? 'neg' : ''}"
                 style="${Math.abs(o.toSide) <= 0.15 ? 'color:var(--text-muted)' : ''}">${
               o.drift ? (o.toSide >= 0 ? '+' : '−') + Math.abs(o.toSide).toFixed(1) : '—'}</td>
