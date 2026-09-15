@@ -166,6 +166,7 @@
   .pill.cfb { background: rgba(194,65,12,.15); color: var(--cfb); }
   .pill.best { background: var(--accent); color: #0b1120; }
   .pill.sharp { background: rgba(29,78,216,.14); color: var(--nfl); font-size: .62rem; }
+  .pill.started { background: var(--warn-light); color: var(--warn); font-size: .62rem; }
 
 
   .callout { border-left: 3px solid var(--warn); background: var(--warn-light); padding: 11px 14px; border-radius: 0 7px 7px 0; font-size: .84rem; margin-top: 14px; }
@@ -1076,6 +1077,18 @@ function describeAge(mins) {
   const h = Math.floor(mins / 60);
   return h < 24 ? `${h}h old` : `${Math.floor(h / 24)}d old`;
 }
+/* Everything here prices pregame. The Odds API keeps a game on /odds until it goes final,
+   with in-play prices from whichever books offer them, and a cached slate outlives its
+   kickoffs. Live numbers against a pregame consensus read as large fake edges, so any game
+   past its commence time is dropped from every scan. Manual games have no kickoff. */
+function hasStarted(g) {
+  if (!g || !g.commence_time) return false;
+  const t = new Date(g.commence_time).getTime();
+  return !isNaN(t) && t <= Date.now();
+}
+function slate(league) { return (state.games[league] || []).filter(g => !hasStarted(g)); }
+function startedCount(league) { return (state.games[league] || []).filter(hasStarted).length; }
+
 function restoreCache() {
   ['nfl', 'cfb'].forEach(lg => {
     const c = store.get('cache_' + lg, null);
@@ -1085,7 +1098,7 @@ function restoreCache() {
 function renderCacheInfo() {
   if (!$('cacheInfo')) return;
   $('cacheInfo').innerHTML = ['nfl', 'cfb'].map(lg => {
-    const age = cacheAge(lg), n = (state.games[lg] || []).length;
+    const age = cacheAge(lg), n = slate(lg).length;
     return `<div class="kv"><span class="kv-label">${lg === 'nfl' ? 'NFL' : 'College football'}</span>
       <span class="kv-val">${age === null ? 'no cached slate' : `${n} game${n === 1 ? '' : 's'} · ${describeAge(age)}`}</span></div>`;
   }).join('');
@@ -1117,7 +1130,8 @@ async function fetchOdds() {
   const markets = selectedMarkets().join(',');
   const url = `https://api.the-odds-api.com/v4/sports/${SPORT_KEY[state.league]}/odds`
             + `?apiKey=${encodeURIComponent(key)}&regions=${regions}`
-            + `&markets=${markets}&oddsFormat=american`;
+            + `&markets=${markets}&oddsFormat=american`
+            + `&commenceTimeFrom=${new Date().toISOString().replace(/\.\d{3}Z$/, 'Z')}`;
 
   $('loadBtn').disabled = true;
   $('loadStatus').textContent = 'Fetching…';
@@ -1135,7 +1149,7 @@ async function fetchOdds() {
                     : res.status === 429 ? 'Quota exhausted (429). Use the cached slate or manual entry until it resets.'
                     : `HTTP ${res.status} — ${txt.slice(0,120)}`);
     }
-    const data = await res.json();
+    const data = (await res.json()).filter(g => !hasStarted(g));
     state.games[state.league] = data;
     store.set('cache_' + state.league, { ts: Date.now(), data });
     recordSnapshot(state.league);       // free line-movement history
@@ -1159,7 +1173,7 @@ async function fetchOdds() {
 }
 
 function currentGameList() {
-  const list = state.games[state.league].slice();
+  const list = slate(state.league);
   if (state.manualGame) list.unshift(state.manualGame);
   return list;
 }
@@ -1167,7 +1181,8 @@ function currentGameList() {
 function populateGames() {
   const sel = $('gameSel');
   const prev = sel.value;
-  const list = currentGameList();
+  // Pin the list the dropdown was built from; a kickoff mid-session would otherwise shift indices.
+  const list = state.listed = currentGameList();
   if (!list.length) {
     sel.innerHTML = '<option value="">— no games loaded —</option>';
     render();
@@ -1405,7 +1420,7 @@ function recordSnapshot(league) {
   const snaps = store.get(snapKey(league), []);
   const now = Date.now();
   const entry = { ts: now, n: {} };
-  (state.games[league] || []).forEach(game => {
+  slate(league).forEach(game => {
     ['spreads', 'totals'].forEach(market => {
       const cons = marketConsensus(game, market, 'home', null, league);
       if (cons) entry.n[`${gameKeyOf(game)}|${market}`] = +cons.number.toFixed(2);
@@ -1441,7 +1456,7 @@ function myBooks() { return store.get('myBooks', []); }
 function scanSlate(league, bankroll, kf, minEdge) {
   const bestPerBet = new Map();
   const only = myBooks();
-  (state.games[league] || []).forEach(game => {
+  slate(league).forEach(game => {
     ['spreads', 'totals', 'h2h'].forEach(market => {
       ['home', 'away'].forEach(side => {
         const quotes = collectQuotes(game, market, side);
@@ -1477,7 +1492,7 @@ function scanSlate(league, bankroll, kf, minEdge) {
    both sides can be backed for a locked profit regardless of result. */
 function findGaps(league) {
   const out = [];
-  (state.games[league] || []).forEach(game => {
+  slate(league).forEach(game => {
     ['spreads', 'totals', 'h2h'].forEach(market => {
       const H = collectQuotes(game, market, 'home');
       const A = collectQuotes(game, market, 'away');
@@ -1526,7 +1541,7 @@ function renderGaps() {
   if (!wrap) return;
   const all = ['nfl', 'cfb'].flatMap(lg => findGaps(lg));
   all.sort((a, b) => b.profit - a.profit);
-  const loaded = (state.games.nfl || []).length + (state.games.cfb || []).length;
+  const loaded = slate('nfl').length + slate('cfb').length;
 
   if (!all.length) {
     wrap.innerHTML = `<div class="section">
@@ -1582,20 +1597,31 @@ function renderBoard() {
 
   const lists = {};
   const blocks = ['nfl', 'cfb'].map(lg => {
-    const loaded = (state.games[lg] || []).length;
+    const loaded = slate(lg).length, started = startedCount(lg);
     const label = lg === 'nfl' ? 'NFL' : 'College football';
+    const age = cacheAge(lg);
+    // Prices decay in minutes; past a couple of hours the "edges" are mostly lines that already moved.
+    const ageNote = age === null ? '' : ` · prices ${describeAge(age)}`;
+    const staleWarn = age !== null && age > 120 && loaded ? `
+      <div class="callout warn"><strong>These prices are ${describeAge(age)}</strong>
+      Lines have almost certainly moved since this slate was fetched. Treat every row as a lead to
+      re-check at the book, or fetch again before acting.</div>` : '';
     lists[lg] = [];
     if (!loaded) {
       return `<div class="section">
         <div class="section-title"><span>${label}</span><span class="section-note">no slate loaded</span></div>
-        <div class="empty-state">Switch to ${lg.toUpperCase()} on the Calibrator tab and fetch odds, or use “Fetch both leagues” above.</div>
+        <div class="empty-state">${started
+          ? `All ${started} game${started === 1 ? '' : 's'} in the saved ${lg.toUpperCase()} slate have kicked off.<br>Use “Fetch both leagues” above to load the next one.`
+          : `Switch to ${lg.toUpperCase()} on the Calibrator tab and fetch odds, or use “Fetch both leagues” above.`}</div>
       </div>`;
     }
+    const startedNote = started ? ` · ${started} started, hidden` : '';
     const hits = scanSlate(lg, bankroll, kf, minEdge).slice(0, n);
     lists[lg] = hits;
     if (!hits.length) {
       return `<div class="section">
-        <div class="section-title"><span>${label}</span><span class="section-note">${loaded} games scanned</span></div>
+        <div class="section-title"><span>${label}</span><span class="section-note">${loaded} games scanned${startedNote}${ageNote}</span></div>
+        ${staleWarn}
         <div class="empty-state">No book is priced away from the consensus by more than ${pct(minEdge)} right now.<br>
         That is the normal result on an efficient board — it means pass, not broken.</div>
       </div>`;
@@ -1603,8 +1629,9 @@ function renderBoard() {
     return `<div class="section">
       <div class="section-title">
         <span>${label} — top ${hits.length}</span>
-        <span class="section-note">${loaded} games scanned · ranked by price vs. consensus</span>
+        <span class="section-note">${loaded} games scanned${startedNote}${ageNote} · ranked by price vs. consensus</span>
       </div>
+      ${staleWarn}
       <div class="table-wrap"><table>
         <thead><tr>
           <th>#</th><th>Matchup</th><th>Bet</th><th>Book</th>
@@ -1650,6 +1677,7 @@ function renderBoard() {
     btn.addEventListener('click', () => {
       const ok = addToCard({
         league: o.league, gameKey: gameKeyOf(o.game), away: o.game.away_team, home: o.game.home_team,
+        commence: o.game.commence_time || null,
         market: o.market, side: o.side, line: o.market === 'h2h' ? 0 : o.row.line,
         price: o.row.price, book: o.row.book, est: o.est, label: betLabel(o)
       });
@@ -1876,6 +1904,11 @@ function renderPlanner() {
       (${pct(totalNaive)} of bankroll). Sized as one card it's $${(totalOpt * bankroll).toFixed(0)}.
       The difference is the over-betting you'd never see betting one game at a time.</div>` : ''}
 
+    ${card.some(cardStarted) ? `
+      <div class="callout warn"><strong>${card.filter(cardStarted).length} bet${card.filter(cardStarted).length === 1 ? ' is' : 's are'} on games that have kicked off</strong>
+      Those prices are gone and the sizing below still includes them. Remove the rows marked STARTED
+      before you size or print this card.</div>` : ''}
+
     ${flags.length ? `<div class="callout"><strong>Correlated exposure</strong>${flags.map(f => `<div style="margin-top:6px">${f}</div>`).join('')}</div>` : ''}
 
     <div class="section">
@@ -1891,7 +1924,8 @@ function renderPlanner() {
         </tr></thead>
         <tbody>${card.map((b, i) => `
           <tr>
-            <td>${matchupCell(b.league, b.away, b.home)} <span class="pill ${b.league}">${b.league.toUpperCase()}</span></td>
+            <td>${matchupCell(b.league, b.away, b.home)} <span class="pill ${b.league}">${b.league.toUpperCase()}</span>${
+              cardStarted(b) ? ' <span class="pill started">STARTED</span>' : ''}</td>
             <td><strong>${b.label}</strong></td>
             <td>${b.book}</td>
             <td class="num">${fmtPrice(b.price)}</td>
@@ -1926,6 +1960,12 @@ function addToCard(entry) {
   renderPlanner();
   return true;
 }
+// Bets added before kickoff times were stored fall back to the loaded slate.
+function cardStarted(b) {
+  if (b.commence) return hasStarted({ commence_time: b.commence });
+  const g = (state.games[b.league] || []).find(x => gameKeyOf(x) === b.gameKey);
+  return hasStarted(g);
+}
 function dropFromCard(id) {
   state.card = state.card.filter(b => b.id !== id);
   store.set('card', state.card);
@@ -1939,7 +1979,7 @@ function updateCardCount() {
 
 function render() {
   const wrap = $('resultsWrap');
-  const list = currentGameList();
+  const list = state.listed || currentGameList();
   const gi = $('gameSel').value;
   const game = list[gi];
   if (!game) { wrap.innerHTML = '<div class="section"><div class="empty-state">Load live odds or add a game manually to begin.</div></div>'; return; }
@@ -2120,7 +2160,7 @@ function render() {
   $('addCardBtn').addEventListener('click', () => {
     const ok = addToCard({
       league, gameKey: gameKeyOf(game), away: game.away_team, home: game.home_team,
-      market, side, line: market === 'h2h' ? 0 : best.line, price: best.price,
+      commence: game.commence_time || null, market, side, line: market === 'h2h' ? 0 : best.line, price: best.price,
       book: best.book, est,
       label: market === 'totals' ? `${sideName} ${Math.abs(best.line)}`
            : market === 'h2h'    ? `${sideName} ML`
@@ -2377,7 +2417,7 @@ function init() {
     state.league = keep;
     setLeague(keep);
     $('boardFetch').disabled = false;
-    const n = (state.games.nfl || []).length, c = (state.games.cfb || []).length;
+    const n = slate('nfl').length, c = slate('cfb').length;
     $('boardStatus').textContent = `Loaded ${n} NFL and ${c} CFB games.`;
     $('boardStatus').className = 'status-line ' + (n + c ? 'ok' : 'err');
     $('boardQuota').textContent = $('quotaNote').textContent;
