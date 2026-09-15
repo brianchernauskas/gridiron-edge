@@ -110,6 +110,30 @@ sized roughly 30% smaller than equivalent independent bets, because they can't d
 Also reports the chance the card finishes down, the 90% outcome range, worst case, and flags correlated
 exposure (multiple bets on one game, a pile of overs, a card that's all favourites).
 
+### CLV Tracker
+
+The check on everything above. Results can't tell you whether the board works for a very long time — at a
+2% edge, profit takes thousands of bets to separate from luck. The closing price settles it in a few dozen.
+It is the market's best estimate once all the news is in, so a bet priced better than the no-vig closing
+consensus had a real edge whatever happened in the game.
+
+- **Log bets once they're placed** — from a Best Board row, under a Calibrator verdict, or the whole Slate
+  Planner card at its sized stakes. Price, line and stake stay editable to match the actual fill.
+- **Closing reads.** Every normal fetch records the consensus for tracked bets for free. **Capture closes**
+  pulls only the games and markets you have bets on, US region only (LowVig and BetOnline anchor it), so a
+  kickoff window costs a credit or two. Optional auto-capture fires 10 minutes before each kickoff while the
+  page is open — a static page has nowhere else to run.
+- **CLV** re-prices each bet at its own line and price against the last pre-kickoff consensus, through the
+  same discrete-margin model and exchange fee handling as the board. A read counts as a close only if it
+  was taken within 3 hours of kickoff; earlier reads show as provisional or "early".
+- **Grading** uses the Odds API scores endpoint (2 credits per league, reaches back 3 days). Older bets are
+  graded by hand.
+- Reports average CLV with a 95% range, share of bets beating the close, the profit CLV implies, and actual
+  P&L with its own range — shown side by side because the gap between the two widths is the whole point.
+  Breakdowns by market, book, league and source show where an edge holds or leaks.
+
+The log lives in this browser. Export CSV for analysis, and back up to JSON — clearing site data clears it.
+
 ### Situational Scorer
 
 Ten weighted factors — rest, travel, weather, injuries, motivation, line movement vs. tickets, pace,

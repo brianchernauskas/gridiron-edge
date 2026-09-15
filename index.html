@@ -167,6 +167,8 @@
   .pill.best { background: var(--accent); color: #0b1120; }
   .pill.sharp { background: rgba(29,78,216,.14); color: var(--nfl); font-size: .62rem; }
   .pill.started { background: var(--warn-light); color: var(--warn); font-size: .62rem; }
+  .clv-in { width: 68px; padding: 4px 6px; font-size: .82rem; text-align: right; }
+  .clv-res { width: auto; padding: 4px 6px; font-size: .82rem; }
 
 
   .callout { border-left: 3px solid var(--warn); background: var(--warn-light); padding: 11px 14px; border-radius: 0 7px 7px 0; font-size: .84rem; margin-top: 14px; }
@@ -208,7 +210,7 @@
   .disclaimer { font-size: .74rem; color: var(--text-muted); text-align: center; margin-top: 34px; line-height: 1.6; }
 
   @media print {
-    header, .tabs, .no-print, .export-row, .del-btn, [data-add] { display: none !important; }
+    header, .tabs, .no-print, .export-row, .del-btn, [data-add], [data-log] { display: none !important; }
     body { background: #fff; color: #000; font-size: 12px; }
     .panel { display: none !important; }
     .panel.active { display: block !important; }
@@ -250,6 +252,7 @@
   <button class="tab active" data-panel="calibrator">Calibrator</button>
   <button class="tab" data-panel="board">Best Board</button>
   <button class="tab" data-panel="planner">Slate Planner</button>
+  <button class="tab" data-panel="clv">CLV Tracker</button>
   <button class="tab" data-panel="situational">Situational Scorer</button>
   <button class="tab" data-panel="settings">Settings</button>
 </nav>
@@ -432,6 +435,54 @@
     </p>
   </div>
   <div id="plannerWrap"></div>
+</section>
+
+<!-- ============ CLV TRACKER ============ -->
+<section class="panel" id="panel-clv">
+  <div class="section no-print">
+    <div class="section-title"><span>Closing line value</span><span class="section-note" id="clvQuota"></span></div>
+    <p style="font-size:.85rem;color:var(--text-muted);margin-bottom:10px">
+      Results can't tell you whether the board works for a very long time: at a 2% edge, profit takes thousands
+      of bets to separate from luck. The closing price can. It is the market's best estimate once all the news is
+      in, so a bet priced better than the no-vig closing consensus had a real edge whatever happened in the game.
+      Log the bets you actually place, capture the consensus shortly before kickoff, and each bet is re-priced at
+      your line and price against that close.
+    </p>
+    <p style="font-size:.85rem;color:var(--text-muted);margin-bottom:14px">
+      Any normal fetch updates the reads for free. A capture pulls only the games and markets you have bets on,
+      from US books only (LowVig and BetOnline anchor the consensus there), so one kickoff window costs a credit
+      or two per league. A read counts as a close only if it was taken within 3 hours of kickoff.
+    </p>
+    <div class="form-grid">
+      <div class="form-group">
+        <label>Capture closes for bets kicking off within</label>
+        <select id="clvWindow">
+          <option value="1">1 hour</option>
+          <option value="3" selected>3 hours</option>
+          <option value="24">24 hours</option>
+          <option value="9999">any time (early read)</option>
+        </select>
+        <span class="hint" id="clvCaptureCost"></span>
+      </div>
+      <div class="form-group">
+        <label>&nbsp;</label>
+        <button class="btn-primary" id="clvCapture">Capture closes</button>
+        <span class="hint">once per kickoff window</span>
+      </div>
+      <div class="form-group">
+        <label>&nbsp;</label>
+        <button class="btn-secondary" id="clvGrade">Grade results</button>
+        <span class="hint" id="clvGradeCost"></span>
+      </div>
+    </div>
+    <div class="form-actions">
+      <label style="display:flex;align-items:center;gap:7px;font-size:.86rem;color:var(--text)">
+        <input type="checkbox" id="clvAuto"> Auto-capture 10 minutes before each kickoff while this page is open</label>
+      <span class="status-line" id="clvAutoNote"></span>
+    </div>
+    <div class="form-actions" style="margin-top:8px"><span class="status-line" id="clvStatus"></span></div>
+  </div>
+  <div id="clvWrap"></div>
 </section>
 
 <!-- ============ SITUATIONAL ============ -->
@@ -884,6 +935,8 @@ let state = {
   params: { ...DEFAULT_PARAMS },
   lean: { pts: 0, side: 'home', label: '' },
   card: [],
+  clv: [],
+  clvGroup: 'market',
   quota: { resetDay: null, autoDetected: false, detectedAt: null,
            lastUsed: null, lastRemaining: null, lastSeenAt: null, headersVisible: false }
 };
@@ -1161,6 +1214,8 @@ async function fetchOdds() {
     state.games[state.league] = data;
     store.set('cache_' + state.league, { ts: Date.now(), data });
     recordSnapshot(state.league);       // free line-movement history
+    observeCloses(state.league, data, Date.now());   // free closing-line reads for tracked bets
+    updateClvCount(); renderClv();
     if (!data.length) {
       $('loadStatus').textContent = 'No games with open lines right now for this league.';
       $('loadStatus').className = 'status-line err';
@@ -1724,7 +1779,9 @@ function renderBoard() {
             <td class="num">$${o.row.stake.toFixed(0)}</td>
             <td class="num" style="color:var(--text-muted)">${o.books}</td>
             <td><button class="btn-secondary" style="padding:3px 10px;font-size:.78rem"
-                  data-add="${lg}|${i}">Add</button></td>
+                  data-add="${lg}|${i}">Add</button>
+                <button class="btn-secondary" style="padding:3px 10px;font-size:.78rem"
+                  data-log="${lg}|${i}" title="Log to the CLV tracker once the bet is placed">Log</button></td>
           </tr>`).join('')}</tbody>
       </table></div>
     </div>`;
@@ -1743,9 +1800,25 @@ function renderBoard() {
         league: o.league, gameKey: gameKeyOf(o.game), away: o.game.away_team, home: o.game.home_team,
         commence: o.game.commence_time || null,
         market: o.market, side: o.side, line: o.market === 'h2h' ? 0 : o.row.line,
-        price: o.row.price, book: o.row.book, est: o.est, label: betLabel(o)
+        price: o.row.price, book: o.row.book, bookKey: o.row.key, est: o.est, label: betLabel(o)
       });
       btn.textContent = ok ? 'Added' : 'On card';
+      btn.disabled = true;
+    });
+  });
+
+  wrap.querySelectorAll('[data-log]').forEach(btn => {
+    const [lg, idx] = btn.dataset.log.split('|');
+    const o = lists[lg][+idx];
+    if (!o) return;
+    btn.addEventListener('click', () => {
+      logBet({
+        league: o.league, gameKey: gameKeyOf(o.game), away: o.game.away_team, home: o.game.home_team,
+        commence: o.game.commence_time || null, market: o.market, side: o.side,
+        line: o.market === 'h2h' ? 0 : o.row.line, price: o.row.price, book: o.row.book, bookKey: o.row.key,
+        stake: Math.round(o.row.stake), edgeAtBet: o.row.ev, source: 'board'
+      });
+      btn.textContent = 'Logged';
       btn.disabled = true;
     });
   });
@@ -2002,6 +2075,7 @@ function renderPlanner() {
       </table></div>
       <div class="export-row">
         <button class="btn-secondary" id="printCard">Print card</button>
+        <button class="btn-secondary" id="logCard" title="Log every bet on the card to the CLV tracker at its sized stake">Log card as placed</button>
         <button class="btn-secondary" id="clearCard">Clear card</button>
       </div>
     </div>`;
@@ -2012,6 +2086,16 @@ function renderPlanner() {
   $('printCard').addEventListener('click', () => window.print());
   $('clearCard').addEventListener('click', () => {
     state.card = []; store.set('card', state.card); renderPlanner(); updateCardCount();
+  });
+  $('logCard').addEventListener('click', () => {
+    let n = 0;
+    card.forEach((b, i) => {
+      if (logBet({ league: b.league, gameKey: b.gameKey, away: b.away, home: b.home, commence: b.commence || null,
+                   market: b.market, side: b.side, line: b.line, price: b.price, book: b.book, bookKey: b.bookKey,
+                   stake: Math.round(stakes[i] * bankroll), edgeAtBet: info[i].ev, source: 'planner' })) n++;
+    });
+    $('logCard').textContent = n ? `Logged ${n} to the CLV tracker` : 'Already logged';
+    $('logCard').disabled = true;
   });
 }
 
@@ -2039,6 +2123,535 @@ function dropFromCard(id) {
 function updateCardCount() {
   const t = document.querySelector('.tab[data-panel="planner"]');
   if (t) t.textContent = state.card.length ? `Slate Planner (${state.card.length})` : 'Slate Planner';
+}
+
+/* ============================================================
+   CLV tracker — did the prices you took beat the close?
+
+   Results take thousands of bets to separate skill from luck; the closing price does not.
+   It is the market's best estimate once every piece of information is in, so a bet's value
+   against the no-vig closing consensus measures the edge you actually had. Each logged bet
+   is re-priced at its own line and price against the last consensus read before kickoff.
+   Reads come free from any normal fetch, or from a targeted capture: US region only (where
+   LowVig and BetOnline sit) and only the markets and games with bets, so a kickoff window
+   costs a credit or two.
+   ============================================================ */
+const CLOSE_REGION = 'us';
+const CLOSE_WINDOW_MIN = 180;        // a read taken earlier than this before kickoff is not a close
+const AUTO_LEAD_MIN = 10;            // auto-capture fires this long before a kickoff
+const AUTO_DONE_MIN = 45;            // a read this close to kickoff needs no further capture
+const MIN_CLOSES_FOR_VERDICT = 30;
+
+function saveClv() { store.set('clv', state.clv); }
+function kickMs(b) { const t = b.commence ? new Date(b.commence).getTime() : NaN; return isNaN(t) ? null : t; }
+// Only games that came from the API can be re-fetched by id; manual games cannot.
+function clvApiGame(b) { return !!b.gameKey && b.gameKey !== 'manual' && !String(b.gameKey).includes('@'); }
+function signPct(x) { return (x >= 0 ? '+' : '−') + pct(Math.abs(x)); }
+function signMoney(x) { return (x >= 0 ? '+' : '−') + '$' + Math.abs(x).toFixed(0); }
+function fmtMins(m) { return m < 90 ? `${m}m` : m < 2880 ? `${(m / 60).toFixed(1)}h` : `${Math.round(m / 1440)}d`; }
+
+function clvLabel(b) {
+  if (b.market === 'totals') return `${b.side === 'home' ? 'Over' : 'Under'} ${Math.abs(b.line)}`;
+  const team = b.side === 'home' ? b.home : b.away;
+  return b.market === 'h2h' ? `${team} ML` : `${team} ${fmtLine(b.line)}`;
+}
+
+// Record the consensus for every tracked bet on these games. `ts` is when the prices were
+// fetched, not now: a read off a slate cached five hours ago is five hours old.
+function observeCloses(league, games, ts) {
+  const byId = new Map(games.map(g => [gameKeyOf(g), g]));
+  let n = 0;
+  state.clv.forEach(b => {
+    if (b.league !== league || (b.obs && b.obs.ts > ts)) return;
+    const g = byId.get(b.gameKey);
+    if (!g || hasStarted(g) || new Date(g.commence_time).getTime() <= ts) return;
+    const cons = marketConsensus(g, b.market, b.side, null, league);
+    if (!cons) return;
+    b.commence = g.commence_time || b.commence;
+    b.obs = { ts, number: +cons.number.toFixed(3), line: cons.line, n: cons.n, sharpN: cons.sharpN };
+    n++;
+  });
+  if (n) saveClv();
+  return n;
+}
+
+// What the bet was worth as placed, if the closing consensus is the truth. Same pricing path
+// as the board, so exchange fees and key-number pushes are handled identically.
+function clvOf(b) {
+  if (!b.obs) return null;
+  const r = evaluateRow({ key: b.bookKey, price: b.price, line: b.line },
+                        b.market, b.side, b.obs.number, b.league, 0, 0);
+  const k = kickMs(b), locked = k !== null && k <= Date.now();
+  const mins = k === null ? null : Math.max(0, Math.round((k - b.obs.ts) / 60000));
+  let pts = null;                               // points gained on the number; positive is good
+  if (b.market !== 'h2h' && b.obs.line !== null && b.obs.line !== undefined) {
+    pts = b.market === 'totals' ? (b.side === 'home' ? b.obs.line - b.line : b.line - b.obs.line)
+                                : b.line - b.obs.line;
+  }
+  return { ev: r.ev, fairPrice: r.fairPrice, mins, pts, locked,
+           counts: locked && mins !== null && mins <= CLOSE_WINDOW_MIN };
+}
+
+function betDecimal(b) {
+  const d = americanToDecimal(b.price);
+  return isExchange(b.bookKey) ? netDecimal(d, b.bookKey) : d;
+}
+function pnlOf(b) {
+  if (!b.result) return null;
+  const stake = b.stake || 0;
+  return b.result === 'W' ? stake * (betDecimal(b) - 1) : b.result === 'L' ? -stake : 0;
+}
+
+// A moneyline is a spread at zero. Exchange contracts settle binary, so a tie loses.
+function gradeBet(b, hs, as) {
+  let v;
+  if (b.market === 'totals') { const t = hs + as; v = b.side === 'home' ? t - b.line : b.line - t; }
+  else v = (b.side === 'home' ? hs - as : as - hs) + (b.market === 'h2h' ? 0 : b.line);
+  if (Math.abs(v) < 1e-9) return isExchange(b.bookKey) ? 'L' : 'P';
+  return v > 0 ? 'W' : 'L';
+}
+
+function logBet(e) {
+  const now = Date.now();
+  if (state.clv.some(b => b.gameKey === e.gameKey && b.market === e.market && b.side === e.side
+                       && b.book === e.book && b.price === e.price && now - b.ts < 30 * 60000)) return false;
+  const g = (state.games[e.league] || []).find(x => gameKeyOf(x) === e.gameKey);
+  state.clv.push({ id: now.toString(36) + Math.random().toString(36).slice(2, 6), ts: now,
+                   obs: null, result: null, ...e,
+                   commence: e.commence || (g && g.commence_time) || null,
+                   line: e.market === 'h2h' ? 0 : e.line });
+  saveClv();
+  // The first read comes off the slate already loaded, stamped with that slate's fetch time.
+  const cache = store.get('cache_' + e.league, null);
+  if (g) observeCloses(e.league, [g], cache && cache.ts ? cache.ts : now);
+  updateClvCount(); renderClv(); scheduleAutoCapture();
+  return true;
+}
+
+function openBets() {
+  const now = Date.now();
+  return state.clv.filter(b => clvApiGame(b) && kickMs(b) !== null && kickMs(b) > now);
+}
+// Games are usually final about 3.5h after kickoff; the scores endpoint reaches back 3 days.
+function gradableBets() {
+  const now = Date.now();
+  return state.clv.filter(b => !b.result && clvApiGame(b) && kickMs(b) !== null
+    && kickMs(b) < now - 3.5 * 3600e3 && kickMs(b) > now - 3 * 864e5);
+}
+function captureGroups(hours) {
+  const now = Date.now(), groups = {};
+  openBets().filter(b => kickMs(b) - now <= hours * 3600e3).forEach(b => {
+    const g = groups[b.league] || (groups[b.league] = { ids: new Set(), markets: new Set(), bets: 0 });
+    g.ids.add(b.gameKey); g.markets.add(b.market); g.bets++;
+  });
+  return groups;
+}
+function captureCost(groups) {
+  return Object.values(groups).reduce((a, g) => a + g.markets.size * CLOSE_REGION.split(',').length, 0);
+}
+
+function clvStatus(msg, cls) {
+  if (!$('clvStatus')) return;
+  $('clvStatus').textContent = msg;
+  $('clvStatus').className = 'status-line ' + (cls || '');
+}
+
+async function oddsApiGet(path, params) {
+  const key = store.get('apiKey', '');
+  if (!key) throw new Error('No API key saved — add one on the Settings tab.');
+  const qs = Object.entries({ apiKey: key, ...params })
+    .map(([k, v]) => `${k}=${encodeURIComponent(v).replace(/%2C/g, ',').replace(/%3A/g, ':')}`).join('&');
+  const res = await fetch(`https://api.the-odds-api.com/v4/sports/${path}?${qs}`);
+  const remain = res.headers.get('x-requests-remaining'), used = res.headers.get('x-requests-used');
+  if (remain !== null) store.set('quota', remain);
+  recordQuota(used, remain);
+  if (!res.ok) throw new Error(res.status === 401 ? 'Key rejected (401). Check it on the Settings tab.'
+                             : res.status === 429 ? 'Quota exhausted (429).'
+                             : `HTTP ${res.status} — ${(await res.text()).slice(0, 120)}`);
+  return res.json();
+}
+
+async function captureCloses(hours, auto) {
+  const groups = captureGroups(hours), leagues = Object.keys(groups);
+  if (!leagues.length) { clvStatus('No open bets kick off in that window.'); return; }
+  const q = quotaSummary();
+  if (auto && q.remaining !== null && q.remaining < 10) {
+    clvStatus(`Auto-capture skipped: only ${q.remaining} credits left.`, 'err');
+    return;
+  }
+  if ($('clvCapture')) $('clvCapture').disabled = true;
+  let bets = 0, spent = 0;
+  try {
+    for (const lg of leagues) {
+      const g = groups[lg];
+      const data = await oddsApiGet(`${SPORT_KEY[lg]}/odds`, {
+        regions: CLOSE_REGION, markets: [...g.markets].join(','), oddsFormat: 'american',
+        eventIds: [...g.ids].join(','),
+        commenceTimeFrom: new Date().toISOString().replace(/\.\d{3}Z$/, 'Z')
+      });
+      spent += g.markets.size * CLOSE_REGION.split(',').length;
+      bets += observeCloses(lg, data.filter(x => !hasStarted(x)), Date.now());
+    }
+    clvStatus(`${auto ? 'Auto-captured' : 'Captured'} closing reads for ${bets} bet${bets === 1 ? '' : 's'} · `
+            + `${spent} credit${spent === 1 ? '' : 's'}.`, 'ok');
+  } catch (e) {
+    clvStatus(e.message.includes('Failed to fetch') ? 'Network/CORS error reaching the odds API.' : e.message, 'err');
+  } finally {
+    if ($('clvCapture')) $('clvCapture').disabled = false;
+    updateCostNote();
+    renderClv();
+  }
+}
+
+async function gradeResults() {
+  const due = gradableBets();
+  const old = state.clv.filter(b => !b.result && kickMs(b) !== null && kickMs(b) <= Date.now() - 3 * 864e5).length;
+  const oldNote = old ? ` ${old} older than 3 days — set those by hand.` : '';
+  if (!due.length) { clvStatus('Nothing to grade yet — games need to be final.' + oldNote); return; }
+  const byLeague = {};
+  due.forEach(b => (byLeague[b.league] || (byLeague[b.league] = new Set())).add(b.gameKey));
+  if ($('clvGrade')) $('clvGrade').disabled = true;
+  let graded = 0, spent = 0;
+  try {
+    for (const [lg, ids] of Object.entries(byLeague)) {
+      const data = await oddsApiGet(`${SPORT_KEY[lg]}/scores`, { daysFrom: 3, eventIds: [...ids].join(',') });
+      spent += 2;
+      data.forEach(ev => {
+        if (!ev.completed || !Array.isArray(ev.scores)) return;
+        const score = name => Number((ev.scores.find(s => s.name === name) || {}).score);
+        const hs = score(ev.home_team), as = score(ev.away_team);
+        if (isNaN(hs) || isNaN(as)) return;
+        state.clv.forEach(b => {
+          if (b.gameKey !== ev.id || b.result) return;
+          b.result = gradeBet(b, hs, as);
+          b.resultSrc = 'auto';
+          b.score = { home: hs, away: as };
+          graded++;
+        });
+      });
+    }
+    saveClv();
+    clvStatus(`Graded ${graded} bet${graded === 1 ? '' : 's'} · ${spent} credits.`
+            + `${graded < due.length ? ` ${due.length - graded} not final yet.` : ''}${oldNote}`, 'ok');
+  } catch (e) {
+    clvStatus(e.message.includes('Failed to fetch') ? 'Network/CORS error reaching the odds API.' : e.message, 'err');
+  } finally {
+    if ($('clvGrade')) $('clvGrade').disabled = false;
+    updateCostNote();
+    renderClv();
+  }
+}
+
+// Auto-capture only runs while the page is open: a static page has nowhere else to run.
+let clvTimer = null, clvLastAuto = 0;
+function scheduleAutoCapture() {
+  clearTimeout(clvTimer);
+  const note = $('clvAutoNote');
+  if (!store.get('clvAuto', false)) { if (note) note.textContent = ''; return; }
+  const now = Date.now();
+  const pending = openBets().filter(b => !(b.obs && kickMs(b) - b.obs.ts <= AUTO_DONE_MIN * 60000));
+  if (!pending.length) { if (note) note.textContent = 'On — nothing pending.'; return; }
+  const next = Math.min(...pending.map(kickMs));
+  // Never retry a failed capture more often than every five minutes.
+  const at = Math.max(next - AUTO_LEAD_MIN * 60000, clvLastAuto + 5 * 60000);
+  if (note) note.textContent = `Next capture ${new Date(Math.max(at, now)).toLocaleString([],
+    { weekday: 'short', hour: 'numeric', minute: '2-digit' })} — keep this page open.`;
+  clvTimer = setTimeout(async () => {
+    if (Date.now() >= at - 1000) {
+      clvLastAuto = Date.now();
+      // Everything kicking off in the same window rides on one fetch.
+      await captureCloses((next - Date.now()) / 3600e3 + 0.75, true);
+    }
+    scheduleAutoCapture();
+  }, Math.min(Math.max(0, at - now), 6 * 3600e3));
+}
+
+function clvStats(bets) {
+  const rows = bets.map(b => ({ b, c: clvOf(b) })).filter(x => x.c && x.c.counts);
+  const evs = rows.map(x => x.c.ev), n = evs.length;
+  const mean = n ? evs.reduce((a, v) => a + v, 0) / n : null;
+  const sd = n > 1 ? Math.sqrt(evs.reduce((a, v) => a + (v - mean) ** 2, 0) / (n - 1)) : null;
+  const graded = bets.filter(b => b.result && b.stake > 0);
+  const rets = graded.map(b => pnlOf(b) / b.stake), gn = rets.length;
+  const staked = graded.reduce((a, b) => a + b.stake, 0);
+  const pnl = graded.reduce((a, b) => a + pnlOf(b), 0);
+  const rMean = gn ? rets.reduce((a, v) => a + v, 0) / gn : null;
+  const rsd = gn > 1 ? Math.sqrt(rets.reduce((a, v) => a + (v - rMean) ** 2, 0) / (gn - 1)) : null;
+  return {
+    n, mean, se: sd === null ? null : sd / Math.sqrt(n),
+    beat: n ? evs.filter(v => v > 0).length / n : null,
+    expected: rows.reduce((a, x) => a + (x.b.stake || 0) * x.c.ev, 0),
+    gn, staked, pnl, roi: staked ? pnl / staked : null, rse: rsd === null ? null : rsd / Math.sqrt(gn)
+  };
+}
+
+function clvVerdict(s) {
+  const results = s.gn >= 10 && s.rse !== null
+    ? ` For comparison, results so far put ROI at ${signPct(s.roi)} ± ${pct(1.96 * s.rse)} after ${s.gn} bets — that width is why results can't answer this for a long time.`
+    : '';
+  if (!s.n) return `<div class="callout info"><strong>No closing lines yet</strong>
+    Log the bets you actually place, then capture closes shortly before kickoff, or turn on auto-capture.
+    A read counts once the game has kicked off, if it was taken within ${CLOSE_WINDOW_MIN / 60} hours of kickoff.</div>`;
+  if (s.n < MIN_CLOSES_FOR_VERDICT) return `<div class="callout info"><strong>Too early to call — ${s.n} close${s.n === 1 ? '' : 's'}</strong>
+    Average CLV settles within a few dozen bets. About ${MIN_CLOSES_FOR_VERDICT - s.n} more before the number means much.${results}</div>`;
+  const lo = s.mean - 1.96 * s.se, hi = s.mean + 1.96 * s.se;
+  const range = `95% range ${signPct(lo)} to ${signPct(hi)}`;
+  if (lo > 0) return `<div class="callout info"><strong>Beating the close</strong>
+    Average CLV ${signPct(s.mean)} (${range}) across ${s.n} closes. The prices you take are better than where the
+    market settles — the strongest evidence available that the edges are real, long before results can confirm it.${results}</div>`;
+  if (hi < 0) return `<div class="callout"><strong>Not beating the close</strong>
+    Average CLV ${signPct(s.mean)} (${range}) across ${s.n} closes. The edges aren't surviving to kickoff: bets are going
+    in after the move, or the books being bet are right more often than the consensus. Bet sooner after a fetch,
+    raise the minimum edge, or check the breakdown by book for where it leaks.${results}</div>`;
+  return `<div class="callout"><strong>Inconclusive</strong>
+    Average CLV ${signPct(s.mean)}, but the ${range} straddles zero after ${s.n} closes. Keep logging.${results}</div>`;
+}
+
+const CLV_GROUPS = {
+  market: { label: 'Market', key: b => ({ spreads: 'Spread', totals: 'Total', h2h: 'Moneyline' })[b.market] || b.market },
+  book:   { label: 'Book', key: b => b.book || '—' },
+  league: { label: 'League', key: b => String(b.league).toUpperCase() },
+  source: { label: 'Source', key: b => ({ board: 'Best Board', calibrator: 'Calibrator', planner: 'Slate Planner' })[b.source] || 'Other' }
+};
+
+function clvBreakdown(bets, dim) {
+  const groups = new Map();
+  bets.forEach(b => {
+    const k = CLV_GROUPS[dim].key(b);
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(b);
+  });
+  const rows = [...groups.entries()].map(([k, list]) => ({ k, total: list.length, s: clvStats(list) }))
+    .sort((a, b) => b.total - a.total);
+  return `<table>
+    <thead><tr><th>${CLV_GROUPS[dim].label}</th><th class="num">Bets</th><th class="num">Closes</th>
+      <th class="num">Avg CLV</th><th class="num">Beat close</th><th class="num">Graded</th>
+      <th class="num">P&amp;L</th><th class="num">ROI</th></tr></thead>
+    <tbody>${rows.map(r => `<tr>
+      <td><strong>${esc(r.k)}</strong></td>
+      <td class="num">${r.total}</td>
+      <td class="num">${r.s.n}</td>
+      <td class="num ${r.s.n ? (r.s.mean >= 0 ? 'pos' : 'neg') : ''}">${r.s.n ? signPct(r.s.mean) : '—'}</td>
+      <td class="num">${r.s.n ? pct(r.s.beat, 0) : '—'}</td>
+      <td class="num">${r.s.gn}</td>
+      <td class="num ${r.s.gn ? (r.s.pnl >= 0 ? 'pos' : 'neg') : ''}">${r.s.gn ? signMoney(r.s.pnl) : '—'}</td>
+      <td class="num">${r.s.roi === null ? '—' : signPct(r.s.roi)}</td>
+    </tr>`).join('')}</tbody>
+  </table>`;
+}
+
+function clvRow(b) {
+  const c = clvOf(b), k = kickMs(b), open = k !== null && k > Date.now(), pnl = pnlOf(b);
+  const when = k === null ? '—' : new Date(k).toLocaleString([],
+    { weekday: 'short', month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  let close = '—', clv = '—', read = open ? 'no read yet' : 'no close';
+  if (c) {
+    const lineTxt = b.market === 'h2h' ? '' : b.market === 'totals' ? `${b.obs.line} ` : `${fmtLine(b.obs.line)} `;
+    const ptsTxt = c.pts ? ` <span class="${c.pts > 0 ? 'pos' : 'neg'}">(${c.pts > 0 ? '+' : '−'}${Math.abs(c.pts)})</span>` : '';
+    close = `${lineTxt}<span style="color:var(--text-muted)">fair ${c.fairPrice}</span>${ptsTxt}`;
+    clv = c.counts
+      ? `<span class="${c.ev >= 0 ? 'pos' : 'neg'}">${signPct(c.ev)}</span>`
+      : `<span style="color:var(--text-muted)" title="Provisional — not a close yet">${signPct(c.ev)}</span>`;
+    read = open ? `<span style="color:var(--text-muted)">${fmtMins(c.mins)} out</span>`
+         : c.counts ? `${fmtMins(c.mins)} before`
+         : `<span style="color:var(--warn)" title="Read too early to count as a close">${fmtMins(c.mins)} early</span>`;
+  }
+  const resTitle = b.resultSrc === 'auto' && b.score
+    ? `Final: ${b.away} ${b.score.away}, ${b.home} ${b.score.home}` : 'Set by hand, or use Grade results';
+  const res = ['', 'W', 'L', 'P'].map(v =>
+    `<option value="${v}" ${(b.result || '') === v ? 'selected' : ''}>${v || '—'}</option>`).join('');
+  return `<tr>
+    <td>${when}${open ? ' <span class="pill sharp">OPEN</span>' : ''}</td>
+    <td>${matchupCell(b.league, b.away, b.home)}</td>
+    <td><strong>${esc(clvLabel(b))}</strong></td>
+    <td>${esc(b.book || '—')}</td>
+    <td class="num"><input class="clv-in" data-f="price" data-id="${b.id}" value="${b.price > 0 ? '+' : ''}${b.price}"></td>
+    <td class="num">${b.market === 'h2h' ? '—' : `<input class="clv-in" data-f="line" data-id="${b.id}" value="${b.line}">`}</td>
+    <td class="num"><input class="clv-in" data-f="stake" data-id="${b.id}" value="${b.stake || 0}"></td>
+    <td class="num" style="color:var(--text-muted)">${typeof b.edgeAtBet === 'number' ? signPct(b.edgeAtBet) : '—'}</td>
+    <td class="num">${close}</td>
+    <td class="num">${clv}</td>
+    <td class="num">${read}</td>
+    <td><select class="clv-res" data-id="${b.id}" title="${esc(resTitle)}">${res}</select></td>
+    <td class="num ${pnl === null ? '' : pnl >= 0 ? 'pos' : 'neg'}">${pnl === null ? '—' : signMoney(pnl)}</td>
+    <td><button class="del-btn" data-clvdel="${b.id}" title="Remove">✕</button></td>
+  </tr>`;
+}
+
+function downloadText(name, text, type) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], { type }));
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 0);
+}
+
+function exportClvCsv() {
+  const cols = ['logged', 'league', 'kickoff', 'away', 'home', 'market', 'bet', 'book', 'price', 'line', 'stake',
+                'source', 'edge_taken', 'close_line', 'close_fair_price', 'clv', 'read_mins_before_kickoff',
+                'counts_as_close', 'result', 'pnl'];
+  const q = v => v === null || v === undefined ? ''
+    : /[",\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v);
+  const lines = state.clv.map(b => {
+    const c = clvOf(b), pnl = pnlOf(b);
+    return [new Date(b.ts).toISOString(), b.league, b.commence, b.away, b.home, b.market, clvLabel(b), b.book,
+            b.price, b.market === 'h2h' ? '' : b.line, b.stake, b.source,
+            typeof b.edgeAtBet === 'number' ? b.edgeAtBet.toFixed(4) : '',
+            b.obs ? b.obs.line : '', c ? String(c.fairPrice).replace('−', '-') : '', c ? c.ev.toFixed(4) : '',
+            c ? c.mins : '', c ? c.counts : '', b.result || '', pnl === null ? '' : pnl.toFixed(2)].map(q).join(',');
+  });
+  downloadText(`gridiron-edge-clv-${new Date().toISOString().slice(0, 10)}.csv`,
+               [cols.join(','), ...lines].join('\n'), 'text/csv');
+}
+
+// The log lives in this browser only, so a backup is the only protection against cleared site data.
+function restoreClv(ev) {
+  const file = ev.target.files && ev.target.files[0];
+  if (!file) return;
+  file.text().then(txt => {
+    const arr = JSON.parse(txt);
+    if (!Array.isArray(arr)) throw new Error('not a tracker backup');
+    const have = new Set(state.clv.map(b => b.id));
+    const add = arr.filter(b => b && b.id && b.market && b.side && !have.has(b.id));
+    state.clv.push(...add);
+    saveClv(); updateClvCount(); renderClv(); scheduleAutoCapture();
+    clvStatus(`Restored ${add.length} bet${add.length === 1 ? '' : 's'}`
+            + `${arr.length - add.length ? ` (${arr.length - add.length} already here)` : ''}.`, 'ok');
+  }).catch(e => clvStatus('Could not read that file: ' + e.message, 'err'));
+}
+
+function updateClvHints() {
+  if (!$('clvCaptureCost')) return;
+  const groups = captureGroups(parseFloat($('clvWindow').value));
+  const n = Object.values(groups).reduce((a, g) => a + g.bets, 0), cost = captureCost(groups);
+  $('clvCaptureCost').textContent = n
+    ? `${n} open bet${n === 1 ? '' : 's'} · ${cost} credit${cost === 1 ? '' : 's'}` : 'no open bets in that window';
+  const due = gradableBets(), leagues = new Set(due.map(b => b.league)).size;
+  $('clvGradeCost').textContent = due.length ? `${due.length} ready · ${leagues * 2} credits` : 'nothing ready to grade';
+  $('clvQuota').textContent = $('quotaNote') ? $('quotaNote').textContent : '';
+}
+
+function updateClvCount() {
+  const t = document.querySelector('.tab[data-panel="clv"]');
+  const n = openBets().length;
+  if (t) t.textContent = n ? `CLV Tracker (${n})` : 'CLV Tracker';
+}
+
+function renderClv() {
+  const wrap = $('clvWrap');
+  if (!wrap) return;
+  updateClvHints();
+  updateClvCount();                  // games kick off while the page sits open
+  const bets = state.clv;
+  if (!bets.length) {
+    wrap.innerHTML = `<div class="section"><div class="empty-state">No bets logged yet.<br><br>
+      Once a bet is actually down, use <strong>Log</strong> on its Best Board row, <strong>Log as placed</strong>
+      under a Calibrator verdict, or <strong>Log card as placed</strong> in the Slate Planner.</div></div>`;
+    return;
+  }
+  const s = clvStats(bets), now = Date.now();
+  // Upcoming games first, soonest at the top; then settled games, most recent first.
+  const sorted = bets.slice().sort((a, b) => {
+    const ka = kickMs(a) || 0, kb = kickMs(b) || 0, oa = ka > now, ob = kb > now;
+    return oa !== ob ? (oa ? -1 : 1) : oa ? ka - kb : kb - ka;
+  });
+  const shown = sorted.slice(0, 200);
+  const dim = state.clvGroup;
+
+  wrap.innerHTML = `
+    <div class="stats-row">
+      <div class="stat-card">
+        <div class="stat-label">Average CLV</div>
+        <div class="stat-value ${s.n ? (s.mean >= 0 ? 'pos' : 'neg') : ''}">${s.n ? signPct(s.mean) : '—'}</div>
+        <div class="stat-sub">${s.n ? `${s.n > 1 ? `± ${pct(1.96 * s.se)} · ` : ''}${s.n} close${s.n === 1 ? '' : 's'}` : 'no closes yet'}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Beat the close</div>
+        <div class="stat-value">${s.n ? pct(s.beat, 0) : '—'}</div>
+        <div class="stat-sub">bets priced better than the close</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Expected from CLV</div>
+        <div class="stat-value ${s.n ? (s.expected >= 0 ? 'pos' : 'neg') : ''}">${s.n ? signMoney(s.expected) : '—'}</div>
+        <div class="stat-sub">if closing prices are the truth</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Actual P&amp;L</div>
+        <div class="stat-value ${s.gn ? (s.pnl >= 0 ? 'pos' : 'neg') : ''}">${s.gn ? signMoney(s.pnl) : '—'}</div>
+        <div class="stat-sub">${s.gn ? `ROI ${signPct(s.roi)}${s.gn > 1 ? ` ± ${pct(1.96 * s.rse)}` : ''} · ${s.gn} graded` : 'nothing graded yet'}</div>
+      </div>
+    </div>
+    ${clvVerdict(s)}
+    <div class="section" style="margin-top:18px">
+      <div class="section-title">
+        <span>Logged bets — ${bets.length}</span>
+        <span class="section-note">${bets.length > shown.length ? `newest ${shown.length} shown · ` : ''}edit price, line or stake to match your actual fill</span>
+      </div>
+      <div class="table-wrap"><table>
+        <thead><tr>
+          <th>Kickoff</th><th>Matchup</th><th>Bet</th><th>Book</th>
+          <th class="num">Price</th><th class="num">Line</th><th class="num">Stake</th><th class="num">Edge taken</th>
+          <th class="num">Close</th><th class="num">CLV</th><th class="num">Read</th><th>Result</th>
+          <th class="num">P&amp;L</th><th></th>
+        </tr></thead>
+        <tbody>${shown.map(clvRow).join('')}</tbody>
+      </table></div>
+      <div class="export-row">
+        <button class="btn-secondary" id="clvCsv">Export CSV</button>
+        <button class="btn-secondary" id="clvBackup">Back up (JSON)</button>
+        <button class="btn-secondary" id="clvRestore">Restore backup</button>
+        <input type="file" id="clvRestoreFile" accept="application/json,.json" hidden>
+      </div>
+    </div>
+    <div class="section">
+      <div class="section-title">
+        <span>Breakdown</span>
+        <select id="clvGroup" style="width:auto">${Object.entries(CLV_GROUPS).map(([k, g]) =>
+          `<option value="${k}" ${k === dim ? 'selected' : ''}>By ${g.label.toLowerCase()}</option>`).join('')}</select>
+      </div>
+      <div class="table-wrap" id="clvBreakdown">${clvBreakdown(bets, dim)}</div>
+    </div>`;
+
+  wireLogoFallbacks(wrap);
+  wrap.querySelectorAll('.clv-in').forEach(inp => inp.addEventListener('change', () => {
+    const b = state.clv.find(x => x.id === inp.dataset.id), f = inp.dataset.f;
+    const v = f === 'price' ? parseOdds(inp.value) : parseFloat(inp.value);
+    const bad = isNaN(v) || (f === 'price' && Math.abs(v) < 100) || (f === 'stake' && v < 0);
+    if (b && !bad) { b[f] = v; saveClv(); }
+    renderClv();
+  }));
+  wrap.querySelectorAll('.clv-res').forEach(sel => sel.addEventListener('change', () => {
+    const b = state.clv.find(x => x.id === sel.dataset.id);
+    if (!b) return;
+    b.result = sel.value || null;
+    b.resultSrc = sel.value ? 'manual' : null;
+    saveClv(); renderClv();
+  }));
+  wrap.querySelectorAll('[data-clvdel]').forEach(btn => btn.addEventListener('click', () => {
+    const b = state.clv.find(x => x.id === btn.dataset.clvdel);
+    if (!b || !confirm(`Remove ${clvLabel(b)} from the tracker?`)) return;
+    state.clv = state.clv.filter(x => x !== b);
+    saveClv(); updateClvCount(); renderClv(); scheduleAutoCapture();
+  }));
+  $('clvGroup').addEventListener('change', () => {
+    state.clvGroup = $('clvGroup').value;
+    $('clvBreakdown').innerHTML = clvBreakdown(state.clv, state.clvGroup);
+  });
+  $('clvCsv').addEventListener('click', exportClvCsv);
+  $('clvBackup').addEventListener('click', () => downloadText(
+    `gridiron-edge-clv-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(state.clv, null, 1), 'application/json'));
+  $('clvRestore').addEventListener('click', () => $('clvRestoreFile').click());
+  $('clvRestoreFile').addEventListener('change', restoreClv);
+}
+
+function wireClv() {
+  $('clvCapture').addEventListener('click', () => captureCloses(parseFloat($('clvWindow').value), false));
+  $('clvGrade').addEventListener('click', gradeResults);
+  $('clvWindow').addEventListener('change', updateClvHints);
+  $('clvAuto').checked = store.get('clvAuto', false);
+  $('clvAuto').addEventListener('change', () => { store.set('clvAuto', $('clvAuto').checked); scheduleAutoCapture(); });
+  document.querySelector('.tab[data-panel="clv"]').addEventListener('click', renderClv);
 }
 
 function render() {
@@ -2127,6 +2740,7 @@ function render() {
         <strong>${sideName}${market === 'h2h' ? ' ML' : market === 'totals' ? ' ' + Math.abs(best.line) : ' ' + fmtLine(best.line)}</strong>
         at ${fmtPrice(best.price)} &mdash; ${best.book}<br>${msg}
         <div style="margin-top:10px"><button class="btn-secondary" id="addCardBtn">Add to card</button>
+        <button class="btn-secondary" id="logBetBtn" title="Log to the CLV tracker once the bet is placed">Log as placed</button>
         <span class="status-line" id="addCardStatus"></span></div>
       </div>
     </div>
@@ -2225,12 +2839,22 @@ function render() {
     const ok = addToCard({
       league, gameKey: gameKeyOf(game), away: game.away_team, home: game.home_team,
       commence: game.commence_time || null, market, side, line: market === 'h2h' ? 0 : best.line, price: best.price,
-      book: best.book, est,
+      book: best.book, bookKey: best.key, est,
       label: market === 'totals' ? `${sideName} ${Math.abs(best.line)}`
            : market === 'h2h'    ? `${sideName} ML`
            : `${sideName} ${fmtLine(best.line)}`
     });
     $('addCardStatus').textContent = ok ? 'Added to the card.' : 'Already on the card.';
+    $('addCardStatus').className = 'status-line ' + (ok ? 'ok' : '');
+  });
+  $('logBetBtn').addEventListener('click', () => {
+    const ok = logBet({
+      league, gameKey: gameKeyOf(game), away: game.away_team, home: game.home_team,
+      commence: game.commence_time || null, market, side, line: market === 'h2h' ? 0 : best.line,
+      price: best.price, book: best.book, bookKey: best.key, stake: Math.round(best.stake),
+      edgeAtBet: best.ev, source: 'calibrator'
+    });
+    $('addCardStatus').textContent = ok ? 'Logged to the CLV tracker.' : 'Already logged.';
     $('addCardStatus').className = 'status-line ' + (ok ? 'ok' : '');
   });
 }
@@ -2421,6 +3045,7 @@ function init() {
   state.lean = store.get('lean', state.lean);
   state.league = store.get('league', 'nfl');
   state.card = store.get('card', []);
+  state.clv = store.get('clv', []);
   state.quota = Object.assign({}, state.quota, store.get('quota2', {}));
   if (state.quota.resetDay) $('resetDayInput').value = state.quota.resetDay;
   Object.keys(DEFAULT_PARAMS).forEach(k => { if ($(k)) $(k).value = state.params[k]; });
@@ -2626,6 +3251,10 @@ function init() {
   render();
   renderBoard();
   renderPlanner();
+  wireClv();
+  updateClvCount();
+  renderClv();
+  scheduleAutoCapture();
 }
 
 init();
