@@ -521,7 +521,8 @@
           <option value="us">US books — 1×</option>
           <option value="us,us_ex">US + exchanges (Kalshi, Polymarket) — 2×</option>
           <option value="us,eu">US + EU (adds Pinnacle) — 2×</option>
-          <option value="us,us2">US + secondary US books — 2×</option>
+          <option value="us,us2">US + secondary US (ESPN Bet, Fanatics, Bally, Hard Rock) — 2×</option>
+          <option value="us,us2,us_ex">US + secondary US + exchanges — 3×</option>
           <option value="us,eu,us_ex">US + EU + exchanges — 3×</option>
           <option value="us,eu,uk">US + EU + UK — 3×</option>
         </select>
@@ -1588,6 +1589,33 @@ function betLabel(o) {
   return o.market === 'h2h' ? `${team} ML` : `${team} ${fmtLine(o.row.line)}`;
 }
 
+/* A book picked on Settings that is absent from every loaded slate silently shrinks the
+   board, because the Odds API splits US books across regions. Name the region that carries it. */
+const BOOK_REGION = {
+  espnbet:['us2','ESPN Bet'], fanatics:['us2','Fanatics'], ballybet:['us2','Bally Bet'],
+  hardrockbet:['us2','Hard Rock'], betparx:['us2','betPARX'], fliff:['us2','Fliff'],
+  windcreek:['us2','Wind Creek'], rebet:['us2','ReBet'],
+  kalshi:['us_ex','Kalshi'], polymarket:['us_ex','Polymarket'], novig:['us_ex','Novig'],
+  prophetx:['us_ex','ProphetX'], betopenly:['us_ex','BetOpenly'], pinnacle:['eu','Pinnacle']
+};
+const REGION_NAME = { us2:'secondary US books', us_ex:'exchanges', eu:'EU' };
+
+function missingBooksNote() {
+  const mine = myBooks();
+  const games = [...slate('nfl'), ...slate('cfb')];
+  if (!mine.length || !games.length) return '';
+  const seen = new Set(games.flatMap(g => (g.bookmakers || []).map(b => b.key)));
+  const missing = mine.filter(k => !seen.has(k));
+  if (!missing.length) return '';
+  const regions = [...new Set(missing.map(k => BOOK_REGION[k] && BOOK_REGION[k][0]).filter(Boolean))];
+  const names = missing.map(k => BOOK_REGION[k] ? BOOK_REGION[k][1] : k);
+  return `<div class="callout"><strong>Bets counted at only ${mine.length - missing.length} of your ${mine.length} books</strong>
+    ${names.join(', ')} ${missing.length === 1 ? "isn't" : "aren't"} in the loaded odds, so the board can't find a price there.
+    ${regions.length
+      ? `Add ${regions.map(r => REGION_NAME[r]).join(' and ')} to the region on the Settings tab — each added region costs another credit per market.`
+      : 'It may not have posted lines yet.'}</div>`;
+}
+
 function renderBoard() {
   const n = parseInt($('boardCount').value, 10);
   const minEdge = parseFloat($('boardMinEdge').value) / 100;
@@ -1616,20 +1644,25 @@ function renderBoard() {
       </div>`;
     }
     const startedNote = started ? ` · ${started} started, hidden` : '';
-    const hits = scanSlate(lg, bankroll, kf, minEdge).slice(0, n);
+    const scanned = scanSlate(lg, bankroll, kf, -Infinity);
+    const hits = scanned.filter(o => o.row.ev >= minEdge).slice(0, n);
+    // Positive but under the floor: shows a short board is a tight market, not a broken scan.
+    const near = scanned.filter(o => o.row.ev > 0 && o.row.ev < minEdge).length;
+    const nearNote = near ? ` · ${near} more positive under ${pct(minEdge)}` : '';
     lists[lg] = hits;
     if (!hits.length) {
       return `<div class="section">
         <div class="section-title"><span>${label}</span><span class="section-note">${loaded} games scanned${startedNote}${ageNote}</span></div>
         ${staleWarn}
         <div class="empty-state">No book is priced away from the consensus by more than ${pct(minEdge)} right now.<br>
+        ${near ? `${near} bet${near === 1 ? ' is' : 's are'} positive but under that floor — lower the minimum edge to see ${near === 1 ? 'it' : 'them'}.<br>` : ''}
         That is the normal result on an efficient board — it means pass, not broken.</div>
       </div>`;
     }
     return `<div class="section">
       <div class="section-title">
         <span>${label} — top ${hits.length}</span>
-        <span class="section-note">${loaded} games scanned${startedNote}${ageNote} · ranked by price vs. consensus</span>
+        <span class="section-note">${loaded} games scanned${startedNote}${nearNote}${ageNote} · ranked by price vs. consensus</span>
       </div>
       ${staleWarn}
       <div class="table-wrap"><table>
@@ -1666,7 +1699,7 @@ function renderBoard() {
     </div>`;
   });
 
-  wrap.innerHTML = blocks.join('');
+  wrap.innerHTML = missingBooksNote() + blocks.join('');
   renderGaps();
   wireLogoFallbacks(wrap);
 
