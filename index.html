@@ -408,6 +408,9 @@
     </div>
     <div class="form-actions">
       <button class="btn-secondary" id="boardRescan">Rescan loaded slates</button>
+      <label style="display:flex;align-items:center;gap:7px;font-size:.86rem;color:var(--text)"
+             title="Each fetch logs the top picks to the CLV tracker as paper bets at the suggested stake">
+        <input type="checkbox" id="boardAutoLog"> Log every pick as a paper bet on each fetch</label>
       <span class="status-line" id="boardStatus"></span>
     </div>
     <div class="callout" style="margin-top:16px">
@@ -474,6 +477,16 @@
         <button class="btn-secondary" id="clvGrade">Grade results</button>
         <span class="hint" id="clvGradeCost"></span>
       </div>
+    </div>
+    <div class="form-actions">
+      <label for="clvView" style="font-size:.86rem;color:var(--text)">Show</label>
+      <select id="clvView" style="width:auto">
+        <option value="paper">Board picks (paper)</option>
+        <option value="placed">Placed bets</option>
+        <option value="all">All</option>
+      </select>
+      <label style="display:flex;align-items:center;gap:7px;font-size:.86rem;color:var(--text)">
+        <input type="checkbox" id="clvAutoGrade"> Auto-grade finished games (2 credits per league, at most every 6 hours)</label>
     </div>
     <div class="form-actions">
       <label style="display:flex;align-items:center;gap:7px;font-size:.86rem;color:var(--text)">
@@ -1215,12 +1228,14 @@ async function fetchOdds() {
     store.set('cache_' + state.league, { ts: Date.now(), data });
     recordSnapshot(state.league);       // free line-movement history
     observeCloses(state.league, data, Date.now());   // free closing-line reads for tracked bets
+    const picked = autoLogBoard(state.league);
     updateClvCount(); renderClv();
     if (!data.length) {
       $('loadStatus').textContent = 'No games with open lines right now for this league.';
       $('loadStatus').className = 'status-line err';
     } else {
-      $('loadStatus').textContent = `Loaded ${data.length} games (${creditsPerLeague()} credits).`;
+      $('loadStatus').textContent = `Loaded ${data.length} games (${creditsPerLeague()} credits).`
+        + (picked ? ` Logged ${picked} board pick${picked === 1 ? '' : 's'} as paper bets.` : '');
       $('loadStatus').className = 'status-line ok';
     }
     populateGames();
@@ -2214,7 +2229,8 @@ function gradeBet(b, hs, as) {
 function logBet(e) {
   const now = Date.now();
   if (state.clv.some(b => b.gameKey === e.gameKey && b.market === e.market && b.side === e.side
-                       && b.book === e.book && b.price === e.price && now - b.ts < 30 * 60000)) return false;
+                       && b.book === e.book && b.price === e.price && !!b.paper === !!e.paper
+                       && now - b.ts < 30 * 60000)) return false;
   const g = (state.games[e.league] || []).find(x => gameKeyOf(x) === e.gameKey);
   state.clv.push({ id: now.toString(36) + Math.random().toString(36).slice(2, 6), ts: now,
                    obs: null, result: null, ...e,
@@ -2226,6 +2242,36 @@ function logBet(e) {
   if (g) observeCloses(e.league, [g], cache && cache.ts ? cache.ts : now);
   updateClvCount(); renderClv(); scheduleAutoCapture();
   return true;
+}
+
+// Paper-trade the board: each fetch logs its top picks at the suggested stake, the first time each
+// team (or total) is flagged, so the board builds its own record without anyone placing a bet.
+// Kept apart from placed bets so neither record contaminates the other.
+function paperKey(b) { return `${b.gameKey}|${b.market === 'totals' ? 'totals' : 'team'}|${b.side}`; }
+function autoLogBoard(league) {
+  if (!store.get('boardAutoLog', true)) return 0;
+  const n = parseInt($('boardCount').value, 10) || 5;
+  const minEdge = (parseFloat($('boardMinEdge').value) || 0) / 100;
+  const bankroll = parseFloat($('bankroll').value) || 0, kf = parseFloat($('kellyFrac').value);
+  const have = new Set(state.clv.filter(b => b.paper).map(paperKey));
+  let added = 0;
+  scanSlate(league, bankroll, kf, minEdge).slice(0, n).forEach(o => {
+    const e = { league, gameKey: gameKeyOf(o.game), away: o.game.away_team, home: o.game.home_team,
+                commence: o.game.commence_time || null, market: o.market, side: o.side,
+                line: o.market === 'h2h' ? 0 : o.row.line, price: o.row.price, book: o.row.book,
+                bookKey: o.row.key, stake: Math.round(o.row.stake), edgeAtBet: o.row.ev,
+                source: 'board-auto', paper: true };
+    if (have.has(paperKey(e)) || !logBet(e)) return;
+    have.add(paperKey(e));
+    added++;
+  });
+  return added;
+}
+
+function clvView() {
+  const v = store.get('clvView', null);
+  if (v) return v;
+  return state.clv.some(b => !b.paper) ? 'placed' : 'paper';
 }
 
 function openBets() {
@@ -2303,7 +2349,7 @@ async function captureCloses(hours, auto) {
   }
 }
 
-async function gradeResults() {
+async function gradeResults(auto) {
   const due = gradableBets();
   const old = state.clv.filter(b => !b.result && kickMs(b) !== null && kickMs(b) <= Date.now() - 3 * 864e5).length;
   const oldNote = old ? ` ${old} older than 3 days — set those by hand.` : '';
@@ -2331,7 +2377,7 @@ async function gradeResults() {
       });
     }
     saveClv();
-    clvStatus(`Graded ${graded} bet${graded === 1 ? '' : 's'} · ${spent} credits.`
+    clvStatus(`${auto ? 'Auto-graded' : 'Graded'} ${graded} bet${graded === 1 ? '' : 's'} · ${spent} credits.`
             + `${graded < due.length ? ` ${due.length - graded} not final yet.` : ''}${oldNote}`, 'ok');
   } catch (e) {
     clvStatus(e.message.includes('Failed to fetch') ? 'Network/CORS error reaching the odds API.' : e.message, 'err');
@@ -2340,6 +2386,17 @@ async function gradeResults() {
     updateCostNote();
     renderClv();
   }
+}
+
+// Paper picks pile up faster than anyone grades by hand, and the scores endpoint only reaches
+// back 3 days. So grade on load and hourly — at most every 6 hours, only when something is due.
+async function maybeAutoGrade() {
+  if (!store.get('clvAutoGrade', true) || !store.get('apiKey', '') || !gradableBets().length) return;
+  if (Date.now() - store.get('clvLastAutoGrade', 0) < 6 * 3600e3) return;
+  const q = quotaSummary();
+  if (q.remaining !== null && q.remaining < 10) return;
+  store.set('clvLastAutoGrade', Date.now());
+  await gradeResults(true);
 }
 
 // Auto-capture only runs while the page is open: a static page has nowhere else to run.
@@ -2386,6 +2443,7 @@ function clvStats(bets) {
 }
 
 function clvVerdict(s) {
+  const who = s.paper ? "The board's picks are priced" : 'The prices you take are';
   const results = s.gn >= 10 && s.rse !== null
     ? ` For comparison, results so far put ROI at ${signPct(s.roi)} ± ${pct(1.96 * s.rse)} after ${s.gn} bets — that width is why results can't answer this for a long time.`
     : '';
@@ -2397,7 +2455,7 @@ function clvVerdict(s) {
   const lo = s.mean - 1.96 * s.se, hi = s.mean + 1.96 * s.se;
   const range = `95% range ${signPct(lo)} to ${signPct(hi)}`;
   if (lo > 0) return `<div class="callout info"><strong>Beating the close</strong>
-    Average CLV ${signPct(s.mean)} (${range}) across ${s.n} closes. The prices you take are better than where the
+    Average CLV ${signPct(s.mean)} (${range}) across ${s.n} closes. ${who} better than where the
     market settles — the strongest evidence available that the edges are real, long before results can confirm it.${results}</div>`;
   if (hi < 0) return `<div class="callout"><strong>Not beating the close</strong>
     Average CLV ${signPct(s.mean)} (${range}) across ${s.n} closes. The edges aren't surviving to kickoff: bets are going
@@ -2411,7 +2469,8 @@ const CLV_GROUPS = {
   market: { label: 'Market', key: b => ({ spreads: 'Spread', totals: 'Total', h2h: 'Moneyline' })[b.market] || b.market },
   book:   { label: 'Book', key: b => b.book || '—' },
   league: { label: 'League', key: b => String(b.league).toUpperCase() },
-  source: { label: 'Source', key: b => ({ board: 'Best Board', calibrator: 'Calibrator', planner: 'Slate Planner' })[b.source] || 'Other' }
+  source: { label: 'Source', key: b => ({ board: 'Best Board', calibrator: 'Calibrator', planner: 'Slate Planner',
+                                           'board-auto': 'Board picks (paper)' })[b.source] || 'Other' }
 };
 
 function clvBreakdown(bets, dim) {
@@ -2463,7 +2522,7 @@ function clvRow(b) {
   return `<tr>
     <td>${when}${open ? ' <span class="pill sharp">OPEN</span>' : ''}</td>
     <td>${matchupCell(b.league, b.away, b.home)}</td>
-    <td><strong>${esc(clvLabel(b))}</strong></td>
+    <td><strong>${esc(clvLabel(b))}</strong>${b.paper ? ' <span class="pill sharp">PAPER</span>' : ''}</td>
     <td>${esc(b.book || '—')}</td>
     <td class="num"><input class="clv-in" data-f="price" data-id="${b.id}" value="${b.price > 0 ? '+' : ''}${b.price}"></td>
     <td class="num">${b.market === 'h2h' ? '—' : `<input class="clv-in" data-f="line" data-id="${b.id}" value="${b.line}">`}</td>
@@ -2543,14 +2602,20 @@ function renderClv() {
   if (!wrap) return;
   updateClvHints();
   updateClvCount();                  // games kick off while the page sits open
-  const bets = state.clv;
+  const view = clvView();
+  if ($('clvView')) $('clvView').value = view;
+  const bets = state.clv.filter(b => view === 'all' || (view === 'paper') === !!b.paper);
   if (!bets.length) {
-    wrap.innerHTML = `<div class="section"><div class="empty-state">No bets logged yet.<br><br>
-      Once a bet is actually down, use <strong>Log</strong> on its Best Board row, <strong>Log as placed</strong>
-      under a Calibrator verdict, or <strong>Log card as placed</strong> in the Slate Planner.</div></div>`;
+    wrap.innerHTML = `<div class="section"><div class="empty-state">${view === 'paper'
+      ? `No board picks logged yet.<br><br>With <strong>Log every pick as a paper bet</strong> on (Best Board tab),
+         each fetch logs the board's top picks here at the suggested stake.`
+      : `No bets logged yet.<br><br>Once a bet is actually down, use <strong>Log</strong> on its Best Board row,
+         <strong>Log as placed</strong> under a Calibrator verdict, or <strong>Log card as placed</strong> in the Slate Planner.`
+      }</div></div>`;
     return;
   }
   const s = clvStats(bets), now = Date.now();
+  s.paper = view === 'paper';
   // Upcoming games first, soonest at the top; then settled games, most recent first.
   const sorted = bets.slice().sort((a, b) => {
     const ka = kickMs(a) || 0, kb = kickMs(b) || 0, oa = ka > now, ob = kb > now;
@@ -2585,7 +2650,7 @@ function renderClv() {
     ${clvVerdict(s)}
     <div class="section" style="margin-top:18px">
       <div class="section-title">
-        <span>Logged bets — ${bets.length}</span>
+        <span>${view === 'paper' ? 'Board picks' : view === 'all' ? 'All tracked bets' : 'Placed bets'} — ${bets.length}</span>
         <span class="section-note">${bets.length > shown.length ? `newest ${shown.length} shown · ` : ''}edit price, line or stake to match your actual fill</span>
       </div>
       <div class="table-wrap"><table>
@@ -2636,7 +2701,7 @@ function renderClv() {
   }));
   $('clvGroup').addEventListener('change', () => {
     state.clvGroup = $('clvGroup').value;
-    $('clvBreakdown').innerHTML = clvBreakdown(state.clv, state.clvGroup);
+    $('clvBreakdown').innerHTML = clvBreakdown(bets, state.clvGroup);
   });
   $('clvCsv').addEventListener('click', exportClvCsv);
   $('clvBackup').addEventListener('click', () => downloadText(
@@ -2647,7 +2712,15 @@ function renderClv() {
 
 function wireClv() {
   $('clvCapture').addEventListener('click', () => captureCloses(parseFloat($('clvWindow').value), false));
-  $('clvGrade').addEventListener('click', gradeResults);
+  $('clvGrade').addEventListener('click', () => gradeResults(false));
+  $('clvView').addEventListener('change', () => { store.set('clvView', $('clvView').value); renderClv(); });
+  $('clvAutoGrade').checked = store.get('clvAutoGrade', true);
+  $('clvAutoGrade').addEventListener('change', () => {
+    store.set('clvAutoGrade', $('clvAutoGrade').checked);
+    maybeAutoGrade();
+  });
+  $('boardAutoLog').checked = store.get('boardAutoLog', true);
+  $('boardAutoLog').addEventListener('change', () => store.set('boardAutoLog', $('boardAutoLog').checked));
   $('clvWindow').addEventListener('change', updateClvHints);
   $('clvAuto').checked = store.get('clvAuto', false);
   $('clvAuto').addEventListener('change', () => { store.set('clvAuto', $('clvAuto').checked); scheduleAutoCapture(); });
@@ -3095,6 +3168,7 @@ function init() {
 
   $('boardFetch').addEventListener('click', async () => {
     const keep = state.league;
+    const paperBefore = state.clv.filter(b => b.paper).length;
     $('boardFetch').disabled = true;
     $('boardStatus').textContent = 'Fetching NFL…';
     $('boardStatus').className = 'status-line';
@@ -3107,7 +3181,9 @@ function init() {
     setLeague(keep);
     $('boardFetch').disabled = false;
     const n = slate('nfl').length, c = slate('cfb').length;
-    $('boardStatus').textContent = `Loaded ${n} NFL and ${c} CFB games.`;
+    const logged = state.clv.filter(b => b.paper).length - paperBefore;
+    $('boardStatus').textContent = `Loaded ${n} NFL and ${c} CFB games.`
+      + (logged ? ` Logged ${logged} new pick${logged === 1 ? '' : 's'} to the CLV tracker.` : '');
     $('boardStatus').className = 'status-line ' + (n + c ? 'ok' : 'err');
     $('boardQuota').textContent = $('quotaNote').textContent;
     renderBoard();
@@ -3255,6 +3331,8 @@ function init() {
   updateClvCount();
   renderClv();
   scheduleAutoCapture();
+  maybeAutoGrade();
+  setInterval(maybeAutoGrade, 3600e3);
 }
 
 init();

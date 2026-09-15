@@ -132,6 +132,13 @@ consensus had a real edge whatever happened in the game.
   P&L with its own range — shown side by side because the gap between the two widths is the whole point.
   Breakdowns by market, book, league and source show where an edge holds or leaks.
 
+**Board picks as paper bets.** With *Log every pick as a paper bet* on (the default, Best Board tab), each
+fetch logs the board's top picks per league — at the Top N and minimum edge set there, at the suggested
+stake — the first time each team or total is flagged. They capture closes, grade and report exactly like
+placed bets but sit in their own view, so the board's record and yours never mix. Finished games
+auto-grade on load and hourly while the page is open, at most every 6 hours (2 credits per league). The
+scores endpoint only reaches back 3 days, so open the page at least that often or grade stragglers by hand.
+
 The log lives in this browser. Export CSV for analysis, and back up to JSON — clearing site data clears it.
 
 ### Situational Scorer
