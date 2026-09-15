@@ -409,9 +409,18 @@
     <div class="form-actions">
       <button class="btn-secondary" id="boardRescan">Rescan loaded slates</button>
       <label style="display:flex;align-items:center;gap:7px;font-size:.86rem;color:var(--text)"
-             title="Each fetch logs the top picks to the CLV tracker as paper bets at the suggested stake">
-        <input type="checkbox" id="boardAutoLog"> Log every pick as a paper bet on each fetch</label>
+             title="Once the CLV tracker has enough closes, show edges and stakes at the rate board picks actually keep at the close">
+        <input type="checkbox" id="scaleEdges"> Scale edges by measured retention</label>
       <span class="status-line" id="boardStatus"></span>
+    </div>
+    <div class="form-actions" style="font-size:.86rem;color:var(--text)">
+      <label style="display:flex;align-items:center;gap:7px"
+             title="Each fetch logs picks to the CLV tracker as paper bets at the suggested stake">
+        <input type="checkbox" id="boardAutoLog"> Log paper bets on each fetch: top</label>
+      <input id="paperCount" type="number" min="1" max="50" step="1" style="width:64px">
+      <span>per league at</span>
+      <input id="paperMinEdge" type="number" min="0" step="0.25" style="width:72px">
+      <span>% edge or better — wider than the board, since logging is free</span>
     </div>
     <div class="callout" style="margin-top:16px">
       <strong>Read this before betting off it</strong>
@@ -453,8 +462,8 @@
     </p>
     <p style="font-size:.85rem;color:var(--text-muted);margin-bottom:14px">
       Any normal fetch updates the reads for free. A capture pulls only the games and markets you have bets on,
-      from US books only (LowVig and BetOnline anchor the consensus there), so one kickoff window costs a credit
-      or two per league. A read counts as a close only if it was taken within 3 hours of kickoff.
+      from a fixed list of ten books anchored by Pinnacle, so one kickoff window costs a credit or two per league.
+      With cloud tracking set up on the Settings tab, captures and grading run while this page is closed. A read counts as a close only if it was taken within 3 hours of kickoff.
     </p>
     <div class="form-grid">
       <div class="form-group">
@@ -493,7 +502,10 @@
         <input type="checkbox" id="clvAuto"> Auto-capture 10 minutes before each kickoff while this page is open</label>
       <span class="status-line" id="clvAutoNote"></span>
     </div>
-    <div class="form-actions" style="margin-top:8px"><span class="status-line" id="clvStatus"></span></div>
+    <div class="form-actions" style="margin-top:8px">
+      <span class="status-line" id="clvStatus"></span>
+      <span class="status-line" id="clvSyncNote"></span>
+    </div>
   </div>
   <div id="clvWrap"></div>
 </section>
@@ -576,7 +588,8 @@
     <p style="font-size:.85rem;color:var(--text-muted);margin-bottom:14px">
       Uses <strong>the-odds-api.com</strong>. The free tier is 500 credits/month, and the /odds endpoint
       bills <strong>credits = markets × regions</strong> — so three markets across US books costs 3 credits
-      per league, not 1. Fetch only the markets you actually price. Your key is stored in this browser's
+      per league, not 1. Naming books instead of regions bills every 10 books as one region, which is how
+      <em>Your books + Pinnacle</em> gets the sharpest consensus for the least. Fetch only the markets you actually price. Your key is stored in this browser's
       localStorage only; it is never sent anywhere except the odds API itself.
     </p>
     <div class="form-grid two">
@@ -587,6 +600,7 @@
       <div class="form-group">
         <label>Regions</label>
         <select id="regionSel">
+          <option value="books">Your books + Pinnacle &amp; LowVig — billed per 10 books (cheapest)</option>
           <option value="us">US books — 1×</option>
           <option value="us,us_ex">US + exchanges (Kalshi, Polymarket) — 2×</option>
           <option value="us,eu">US + EU (adds Pinnacle) — 2×</option>
@@ -617,9 +631,44 @@
       <strong>Making 500 credits last a season</strong>
       Slates are cached in this browser, so reopening the app or reloading the page costs nothing —
       only "Fetch live odds" spends credits. Pull a slate once, work the whole card off it, and refresh
-      only when you need current numbers. Cost is markets × regions per league: all three markets on US
-      books is 6 credits for both leagues (about 83 full scans a month); dropping moneyline makes it 4,
-      but the board can then no longer compare a team's spread against its moneyline.
+      only when you need current numbers. Cost is markets × regions per league, where 10 named books count
+      as one region: all three markets on your books + Pinnacle (up to 10 books) is 6 credits for both
+      leagues, about 83 full scans a month. Dropping moneyline makes it 4, but the board can then no longer
+      compare a team's spread against its moneyline.
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">
+      <span>Cloud tracking</span>
+      <span class="section-note">captures closes and grades games while this page is closed</span>
+    </div>
+    <p style="font-size:.85rem;color:var(--text-muted);margin-bottom:10px">
+      Auto-capture and auto-grade only run while this page is open. Cloud tracking hands both to a scheduled
+      GitHub Action in a <strong>private</strong> repo. This page writes the list of games with open or ungraded
+      bets — ids, kickoff times and markets, no stakes or books. The Action pulls closing odds shortly before
+      each kickoff and final scores afterwards, and this page prices and grades them the next time it opens.
+    </p>
+    <p style="font-size:.85rem;color:var(--text-muted);margin-bottom:14px">
+      Setup is in the README: a private repo holding <code>cloud/tracker.mjs</code> and the workflow, your Odds
+      API key as its <code>ODDS_API_KEY</code> Actions secret, and a fine-grained token with
+      <strong>Contents: read and write</strong> on that one repo only. The token is kept in this browser's storage,
+      which other GitHub Pages sites on the same github.io domain can also read — scope it to nothing else.
+    </p>
+    <div class="form-grid two">
+      <div class="form-group">
+        <label>Private repo (owner/name)</label>
+        <input id="syncRepo" placeholder="owner/gridiron-edge-data">
+      </div>
+      <div class="form-group">
+        <label>Fine-grained token</label>
+        <input id="syncToken" type="password" placeholder="github_pat_…">
+      </div>
+    </div>
+    <div class="form-actions">
+      <button class="btn-primary" id="syncSave">Save and sync</button>
+      <button class="btn-secondary" id="syncClear">Disconnect</button>
+      <span class="status-line" id="syncStatus"></span>
     </div>
   </div>
 
@@ -1032,7 +1081,27 @@ function selectedMarkets() {
   const m = store.get('markets', ['spreads', 'totals', 'h2h']);
   return m.length ? m : ['spreads'];
 }
-function regionCount() { return store.get('regions', 'us,us_ex').split(',').length; }
+/* Naming books instead of regions bills every 10 books as one region, so a fetch of exactly the
+   books you bet plus the sharp anchors costs less than the regions that happen to contain them —
+   and brings in Pinnacle, which sits in the EU region. LowVig is BetOnline's low-hold brand and
+   prices almost identically, so one of the two is enough. Unused slots in the last group of ten
+   are already paid for, so they fill with deep US books that thicken the consensus. */
+const SHARP_ANCHORS = ['pinnacle', 'lowvig'];
+const CONSENSUS_FILL = ['draftkings', 'fanduel', 'betmgm', 'williamhill_us', 'betrivers', 'bovada',
+                        'fanatics', 'espnbet', 'betonlineag', 'mybookieag', 'betus', 'hardrockbet', 'ballybet'];
+function regionSetting() { return store.get('regions', 'books'); }
+function booksMode() { return regionSetting() === 'books'; }
+function fetchBooks() {
+  const list = [...new Set([...SHARP_ANCHORS, ...myBooks()])];
+  const target = Math.max(10, Math.ceil(list.length / 10) * 10);
+  for (const b of CONSENSUS_FILL) {
+    if (list.length >= target) break;
+    if (!list.includes(b)) list.push(b);
+  }
+  return list;
+}
+function unitsFor(setting) { return setting === 'books' ? Math.ceil(fetchBooks().length / 10) : setting.split(',').length; }
+function regionCount() { return unitsFor(regionSetting()); }
 function creditsPerLeague() { return selectedMarkets().length * regionCount(); }
 
 /* ============================================================
@@ -1200,10 +1269,11 @@ async function fetchOdds() {
     $('loadStatus').className = 'status-line err';
     return;
   }
-  const regions = store.get('regions', 'us,us_ex');
+  const regions = regionSetting();
   const markets = selectedMarkets().join(',');
   const url = `https://api.the-odds-api.com/v4/sports/${SPORT_KEY[state.league]}/odds`
-            + `?apiKey=${encodeURIComponent(key)}&regions=${regions}`
+            + `?apiKey=${encodeURIComponent(key)}`
+            + (regions === 'books' ? `&bookmakers=${fetchBooks().join(',')}` : `&regions=${regions}`)
             + `&markets=${markets}&oddsFormat=american`
             + `&commenceTimeFrom=${new Date().toISOString().replace(/\.\d{3}Z$/, 'Z')}`;
 
@@ -1690,13 +1760,37 @@ function altCell(o) {
 /* A book picked on Settings that is absent from every loaded slate silently shrinks the
    board, because the Odds API splits US books across regions. Name the region that carries it. */
 const BOOK_REGION = {
-  espnbet:['us2','ESPN Bet'], fanatics:['us2','Fanatics'], ballybet:['us2','Bally Bet'],
+  espnbet:['us2','ESPN Bet'], fanatics:['us','Fanatics'], ballybet:['us2','Bally Bet'],
   hardrockbet:['us2','Hard Rock'], betparx:['us2','betPARX'], fliff:['us2','Fliff'],
   windcreek:['us2','Wind Creek'], rebet:['us2','ReBet'],
   kalshi:['us_ex','Kalshi'], polymarket:['us_ex','Polymarket'], novig:['us_ex','Novig'],
   prophetx:['us_ex','ProphetX'], betopenly:['us_ex','BetOpenly'], pinnacle:['eu','Pinnacle']
 };
 const REGION_NAME = { us2:'secondary US books', us_ex:'exchanges', eu:'EU' };
+
+/* Edge retention, measured by the CLV tracker on board-sourced bets. A flagged edge is an
+   estimate against a consensus that keeps moving; what matters is how much is still there at
+   the close. Untrusted until MIN_CLOSES_FOR_VERDICT closes, and clamped to [0, 1]: a board that
+   beats its own estimate is far more likely noise than a model that underrates itself. */
+function boardRetention() {
+  const s = clvStats(state.clv.filter(b => b.source === 'board' || b.source === 'board-auto'));
+  return { n: s.n, k: s.n >= MIN_CLOSES_FOR_VERDICT && s.kept !== null ? Math.max(0, Math.min(1, s.kept)) : null };
+}
+
+function retentionNote(ret, k) {
+  if (ret.k === null) {
+    return ret.n ? `<div class="callout info"><strong>Calibrating edges — ${ret.n} of ${MIN_CLOSES_FOR_VERDICT} closes</strong>
+      Once board picks have ${MIN_CLOSES_FOR_VERDICT} closing lines in the CLV tracker, edges and stakes here are scaled
+      by how much of the flagged edge actually survives to the close.</div>` : '';
+  }
+  if (k === 1 && !store.get('scaleEdges', true)) {
+    return `<div class="callout info"><strong>Measured retention ${pct(ret.k, 0)} — not applied</strong>
+      Board picks have kept ${pct(ret.k, 0)} of their flagged edge at the close across ${ret.n} closes. The numbers below are raw.</div>`;
+  }
+  return `<div class="callout info"><strong>Edges and stakes scaled ×${k.toFixed(2)}</strong>
+    Across ${ret.n} closes, board picks kept ${pct(ret.k, 0)} of their flagged edge at the close, so every edge,
+    stake and the minimum-edge filter below use that rate. Hover an edge for the raw number.</div>`;
+}
 
 function missingBooksNote() {
   const mine = myBooks();
@@ -1705,7 +1799,9 @@ function missingBooksNote() {
   const seen = new Set(games.flatMap(g => (g.bookmakers || []).map(b => b.key)));
   const missing = mine.filter(k => !seen.has(k));
   if (!missing.length) return '';
-  const regions = [...new Set(missing.map(k => BOOK_REGION[k] && BOOK_REGION[k][0]).filter(Boolean))];
+  // A named-book fetch already asked for every picked book; a gap there means no lines posted.
+  const regions = booksMode() ? []
+    : [...new Set(missing.map(k => BOOK_REGION[k] && BOOK_REGION[k][0]).filter(k => k && !regionSetting().split(',').includes(k)))];
   const names = missing.map(k => BOOK_REGION[k] ? BOOK_REGION[k][1] : k);
   return `<div class="callout"><strong>Bets counted at only ${mine.length - missing.length} of your ${mine.length} books</strong>
     ${names.join(', ')} ${missing.length === 1 ? "isn't" : "aren't"} in the loaded odds, so the board can't find a price there.
@@ -1720,6 +1816,9 @@ function renderBoard() {
   const bankroll = parseFloat($('bankroll').value) || 0;
   const kf = parseFloat($('kellyFrac').value);
   const wrap = $('boardWrap');
+  // Scale edges and stakes by how much edge board picks have actually kept at the close.
+  const ret = boardRetention();
+  const k = store.get('scaleEdges', true) && ret.k !== null ? ret.k : 1;
 
   const lists = {};
   const blocks = ['nfl', 'cfb'].map(lg => {
@@ -1743,9 +1842,9 @@ function renderBoard() {
     }
     const startedNote = started ? ` · ${started} started, hidden` : '';
     const scanned = scanSlate(lg, bankroll, kf, -Infinity);
-    const hits = scanned.filter(o => o.row.ev >= minEdge).slice(0, n);
+    const hits = scanned.filter(o => o.row.ev * k >= minEdge).slice(0, n);
     // Positive but under the floor: shows a short board is a tight market, not a broken scan.
-    const near = scanned.filter(o => o.row.ev > 0 && o.row.ev < minEdge).length;
+    const near = scanned.filter(o => o.row.ev > 0 && o.row.ev * k < minEdge).length;
     const nearNote = near ? ` · ${near} more positive under ${pct(minEdge)}` : '';
     lists[lg] = hits;
     if (!hits.length) {
@@ -1783,7 +1882,7 @@ function renderBoard() {
               : (o.cons.number >= 0 ? 'H by ' : 'A by ') + Math.abs(o.cons.number).toFixed(1)
             }${o.cons.sharpN ? ` <span class="pill sharp">${o.cons.sharpN} sharp</span>` : ''}</td>
             <td class="num">${o.row.fairPrice}</td>
-            <td class="num pos">+${pct(o.row.ev)}</td>
+            <td class="num pos" title="${k < 1 ? `raw +${pct(o.row.ev)}, scaled ×${k.toFixed(2)}` : ''}">+${pct(o.row.ev * k)}</td>
             <td class="num">${pct(o.row.myProb, 0)}</td>
             <td style="color:var(--text-muted);font-size:.8rem;white-space:nowrap">${altCell(o)}</td>
             <td class="num ${o.toSide > 0.15 ? 'pos' : o.toSide < -0.15 ? 'neg' : ''}"
@@ -1791,7 +1890,7 @@ function renderBoard() {
               o.drift ? (o.toSide >= 0 ? '+' : '−') + Math.abs(o.toSide).toFixed(1) : '—'}</td>
             <td class="num" style="color:${o.stale !== null && o.stale > 20 ? 'var(--warn)' : 'var(--text-muted)'}">${
               o.stale === null ? '—' : o.stale < 60 ? o.stale + 'm' : Math.floor(o.stale/60) + 'h'}</td>
-            <td class="num">$${o.row.stake.toFixed(0)}</td>
+            <td class="num">$${(o.row.stake * k).toFixed(0)}</td>
             <td class="num" style="color:var(--text-muted)">${o.books}</td>
             <td><button class="btn-secondary" style="padding:3px 10px;font-size:.78rem"
                   data-add="${lg}|${i}">Add</button>
@@ -1802,7 +1901,7 @@ function renderBoard() {
     </div>`;
   });
 
-  wrap.innerHTML = missingBooksNote() + blocks.join('');
+  wrap.innerHTML = retentionNote(ret, k) + missingBooksNote() + blocks.join('');
   renderGaps();
   wireLogoFallbacks(wrap);
 
@@ -1831,7 +1930,7 @@ function renderBoard() {
         league: o.league, gameKey: gameKeyOf(o.game), away: o.game.away_team, home: o.game.home_team,
         commence: o.game.commence_time || null, market: o.market, side: o.side,
         line: o.market === 'h2h' ? 0 : o.row.line, price: o.row.price, book: o.row.book, bookKey: o.row.key,
-        stake: Math.round(o.row.stake), edgeAtBet: o.row.ev, source: 'board'
+        stake: Math.round(o.row.stake * k), edgeAtBet: o.row.ev, source: 'board'
       });
       btn.textContent = 'Logged';
       btn.disabled = true;
@@ -2147,17 +2246,20 @@ function updateCardCount() {
    It is the market's best estimate once every piece of information is in, so a bet's value
    against the no-vig closing consensus measures the edge you actually had. Each logged bet
    is re-priced at its own line and price against the last consensus read before kickoff.
-   Reads come free from any normal fetch, or from a targeted capture: US region only (where
-   LowVig and BetOnline sit) and only the markets and games with bets, so a kickoff window
-   costs a credit or two.
+   Reads come free from any normal fetch, or from a targeted capture: a fixed ten-book list
+   anchored by Pinnacle (ten named books bill as one region), and only the markets and games
+   with bets, so a kickoff window costs a credit or two.
    ============================================================ */
-const CLOSE_REGION = 'us';
+// Must match CLOSE_BOOKS in cloud/tracker.mjs.
+const CLOSE_BOOKS = ['pinnacle', 'lowvig', 'draftkings', 'fanduel', 'betmgm', 'williamhill_us',
+                     'betrivers', 'bovada', 'fanatics', 'espnbet'];
+const CLOSE_UNITS = Math.ceil(CLOSE_BOOKS.length / 10);
 const CLOSE_WINDOW_MIN = 180;        // a read taken earlier than this before kickoff is not a close
 const AUTO_LEAD_MIN = 10;            // auto-capture fires this long before a kickoff
 const AUTO_DONE_MIN = 45;            // a read this close to kickoff needs no further capture
 const MIN_CLOSES_FOR_VERDICT = 30;
 
-function saveClv() { store.set('clv', state.clv); }
+function saveClv() { store.set('clv', state.clv); scheduleSyncPush(); }
 function kickMs(b) { const t = b.commence ? new Date(b.commence).getTime() : NaN; return isNaN(t) ? null : t; }
 // Only games that came from the API can be re-fetched by id; manual games cannot.
 function clvApiGame(b) { return !!b.gameKey && b.gameKey !== 'manual' && !String(b.gameKey).includes('@'); }
@@ -2177,9 +2279,10 @@ function observeCloses(league, games, ts) {
   const byId = new Map(games.map(g => [gameKeyOf(g), g]));
   let n = 0;
   state.clv.forEach(b => {
-    if (b.league !== league || (b.obs && b.obs.ts > ts)) return;
+    if (b.league !== league || (b.obs && b.obs.ts >= ts)) return;
     const g = byId.get(b.gameKey);
-    if (!g || hasStarted(g) || new Date(g.commence_time).getTime() <= ts) return;
+    // Only reads taken before kickoff. Cloud reads arrive after the game has started, which is fine.
+    if (!g || !(new Date(g.commence_time).getTime() > ts)) return;
     const cons = marketConsensus(g, b.market, b.side, null, league);
     if (!cons) return;
     b.commence = g.commence_time || b.commence;
@@ -2250,8 +2353,10 @@ function logBet(e) {
 function paperKey(b) { return `${b.gameKey}|${b.market === 'totals' ? 'totals' : 'team'}|${b.side}`; }
 function autoLogBoard(league) {
   if (!store.get('boardAutoLog', true)) return 0;
-  const n = parseInt($('boardCount').value, 10) || 5;
-  const minEdge = (parseFloat($('boardMinEdge').value) || 0) / 100;
+  // A wider net than the board shows: logging is free, and picks across more edge sizes are
+  // what let the tracker measure how edge decays. Always raw edges, never scaled ones.
+  const n = Math.max(1, parseInt(store.get('paperCount', 10), 10) || 10);
+  const minEdge = (parseFloat(store.get('paperMinEdge', 0.5)) || 0) / 100;
   const bankroll = parseFloat($('bankroll').value) || 0, kf = parseFloat($('kellyFrac').value);
   const have = new Set(state.clv.filter(b => b.paper).map(paperKey));
   let added = 0;
@@ -2293,7 +2398,7 @@ function captureGroups(hours) {
   return groups;
 }
 function captureCost(groups) {
-  return Object.values(groups).reduce((a, g) => a + g.markets.size * CLOSE_REGION.split(',').length, 0);
+  return Object.values(groups).reduce((a, g) => a + g.markets.size * CLOSE_UNITS, 0);
 }
 
 function clvStatus(msg, cls) {
@@ -2331,11 +2436,11 @@ async function captureCloses(hours, auto) {
     for (const lg of leagues) {
       const g = groups[lg];
       const data = await oddsApiGet(`${SPORT_KEY[lg]}/odds`, {
-        regions: CLOSE_REGION, markets: [...g.markets].join(','), oddsFormat: 'american',
+        bookmakers: CLOSE_BOOKS.join(','), markets: [...g.markets].join(','), oddsFormat: 'american',
         eventIds: [...g.ids].join(','),
         commenceTimeFrom: new Date().toISOString().replace(/\.\d{3}Z$/, 'Z')
       });
-      spent += g.markets.size * CLOSE_REGION.split(',').length;
+      spent += g.markets.size * CLOSE_UNITS;
       bets += observeCloses(lg, data.filter(x => !hasStarted(x)), Date.now());
     }
     clvStatus(`${auto ? 'Auto-captured' : 'Captured'} closing reads for ${bets} bet${bets === 1 ? '' : 's'} · `
@@ -2362,19 +2467,7 @@ async function gradeResults(auto) {
     for (const [lg, ids] of Object.entries(byLeague)) {
       const data = await oddsApiGet(`${SPORT_KEY[lg]}/scores`, { daysFrom: 3, eventIds: [...ids].join(',') });
       spent += 2;
-      data.forEach(ev => {
-        if (!ev.completed || !Array.isArray(ev.scores)) return;
-        const score = name => Number((ev.scores.find(s => s.name === name) || {}).score);
-        const hs = score(ev.home_team), as = score(ev.away_team);
-        if (isNaN(hs) || isNaN(as)) return;
-        state.clv.forEach(b => {
-          if (b.gameKey !== ev.id || b.result) return;
-          b.result = gradeBet(b, hs, as);
-          b.resultSrc = 'auto';
-          b.score = { home: hs, away: as };
-          graded++;
-        });
-      });
+      data.forEach(ev => { graded += applyScore(ev, 'auto'); });
     }
     saveClv();
     clvStatus(`${auto ? 'Auto-graded' : 'Graded'} ${graded} bet${graded === 1 ? '' : 's'} · ${spent} credits.`
@@ -2391,6 +2484,7 @@ async function gradeResults(auto) {
 // Paper picks pile up faster than anyone grades by hand, and the scores endpoint only reaches
 // back 3 days. So grade on load and hourly — at most every 6 hours, only when something is due.
 async function maybeAutoGrade() {
+  if (cloudActive()) return;                 // the cloud tracker grades; don't pay twice
   if (!store.get('clvAutoGrade', true) || !store.get('apiKey', '') || !gradableBets().length) return;
   if (Date.now() - store.get('clvLastAutoGrade', 0) < 6 * 3600e3) return;
   const q = quotaSummary();
@@ -2404,6 +2498,7 @@ let clvTimer = null, clvLastAuto = 0;
 function scheduleAutoCapture() {
   clearTimeout(clvTimer);
   const note = $('clvAutoNote');
+  if (cloudActive()) { if (note) note.textContent = 'Cloud tracking is capturing closes.'; return; }
   if (!store.get('clvAuto', false)) { if (note) note.textContent = ''; return; }
   const now = Date.now();
   const pending = openBets().filter(b => !(b.obs && kickMs(b) - b.obs.ts <= AUTO_DONE_MIN * 60000));
@@ -2423,6 +2518,164 @@ function scheduleAutoCapture() {
   }, Math.min(Math.max(0, at - now), 6 * 3600e3));
 }
 
+function applyScore(ev, src) {
+  if (!ev || !ev.completed || !Array.isArray(ev.scores)) return 0;
+  const score = name => Number((ev.scores.find(s => s.name === name) || {}).score);
+  const hs = score(ev.home_team), as = score(ev.away_team);
+  if (isNaN(hs) || isNaN(as)) return 0;
+  let n = 0;
+  state.clv.forEach(b => {
+    if (b.gameKey !== ev.id || b.result) return;
+    b.result = gradeBet(b, hs, as);
+    b.resultSrc = src;
+    b.score = { home: hs, away: as };
+    n++;
+  });
+  return n;
+}
+
+/* ============================================================
+   Cloud tracking — captures and grading while this page is closed.
+
+   A scheduled GitHub Action in a private repo does the fetching. This page writes watch.json
+   (games with open or ungraded bets: id, league, kickoff, markets — no stakes or books); the
+   Action stores the raw odds and scores it pulls in closes.json and scores.json; this page
+   prices and grades them with its own model, so the logic exists in exactly one place.
+   ============================================================ */
+function syncCfg() { return { repo: store.get('syncRepo', ''), token: store.get('syncToken', '') }; }
+function syncReady() { const c = syncCfg(); return !!(c.repo && c.token); }
+function cloudActive() { return syncReady() && store.get('syncOk', false); }
+
+function syncNote(msg, cls) {
+  ['syncStatus', 'clvSyncNote'].forEach(id => {
+    if (!$(id)) return;
+    $(id).textContent = msg;
+    $(id).className = 'status-line ' + (cls || '');
+  });
+}
+
+function b64encode(text) {
+  const bytes = new TextEncoder().encode(text);
+  let bin = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+function b64decode(b64) {
+  const bin = atob(String(b64).replace(/\s/g, ''));
+  return new TextDecoder().decode(Uint8Array.from(bin, c => c.charCodeAt(0)));
+}
+
+async function gh(path, init) {
+  const { repo, token } = syncCfg();
+  return fetch(`https://api.github.com/repos/${repo}${path}`, {
+    cache: 'no-store', ...init,
+    headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json',
+               'X-GitHub-Api-Version': '2022-11-28' }
+  });
+}
+async function ghRead(file) {
+  const res = await gh(`/contents/${file}`);
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`GitHub ${res.status} reading ${file}`);
+  const j = await res.json();
+  return { sha: j.sha, data: JSON.parse(b64decode(j.content)) };
+}
+async function ghWrite(file, data, sha, message) {
+  const res = await gh(`/contents/${file}`, {
+    method: 'PUT',
+    body: JSON.stringify({ message, content: b64encode(JSON.stringify(data, null, 1) + '\n'), ...(sha ? { sha } : {}) })
+  });
+  if (!res.ok) throw new Error(`GitHub ${res.status} writing ${file}`);
+}
+
+// Games the Action should watch: kickoff still ahead (needs a close), or finished within the
+// scores endpoint's 3-day reach and not yet graded.
+function watchList() {
+  const now = Date.now(), games = new Map();
+  state.clv.forEach(b => {
+    const k = kickMs(b);
+    if (!clvApiGame(b) || k === null) return;
+    if (!(k > now || (!b.result && k > now - 3 * 864e5))) return;
+    const g = games.get(b.gameKey) || { league: b.league, gameKey: b.gameKey, commence: b.commence, markets: [] };
+    if (!g.markets.includes(b.market)) g.markets.push(b.market);
+    games.set(b.gameKey, g);
+  });
+  return [...games.values()].sort((a, b) => kickMs(a) - kickMs(b));
+}
+
+async function syncPush(force) {
+  const games = watchList(), body = JSON.stringify(games);
+  if (!force && body === store.get('syncLastWatch', null)) return;
+  const cur = await ghRead('watch.json');
+  await ghWrite('watch.json', { updated: new Date().toISOString(), games }, cur && cur.sha,
+                `watch: ${games.length} game${games.length === 1 ? '' : 's'}`);
+  store.set('syncLastWatch', body);
+}
+
+let syncPushTimer = null;
+function scheduleSyncPush() {
+  if (!syncReady()) return;
+  clearTimeout(syncPushTimer);
+  syncPushTimer = setTimeout(() => syncPush(false).catch(e => syncNote('Cloud sync failed: ' + e.message, 'err')), 4000);
+}
+
+async function syncPull() {
+  const [closes, scores] = await Promise.all([ghRead('closes.json'), ghRead('scores.json')]);
+  let reads = 0, graded = 0;
+  Object.values((closes && closes.data) || {}).forEach(c => {
+    if (c && c.game && c.league && c.ts) reads += observeCloses(c.league, [c.game], c.ts);
+  });
+  Object.values((scores && scores.data) || {}).forEach(ev => { graded += applyScore(ev, 'cloud'); });
+  if (graded) saveClv();
+  return { reads, graded };
+}
+
+let syncBusy = false;
+async function syncCycle(force) {
+  if (!syncReady() || syncBusy) return;
+  syncBusy = true;
+  try {
+    if (force) {
+      const res = await gh('');
+      if (!res.ok) throw new Error(res.status === 401 ? 'token rejected' : `repo not found or the token can't see it (${res.status})`);
+    }
+    const r = await syncPull();
+    await syncPush(force);
+    store.set('syncOk', true);
+    const time = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    syncNote(`Cloud synced ${time}${r.reads || r.graded ? ` — ${r.reads} closing read${r.reads === 1 ? '' : 's'}, ${r.graded} graded` : ''}.`, 'ok');
+    if (r.reads || r.graded) { updateClvCount(); renderClv(); renderBoard(); }
+  } catch (e) {
+    store.set('syncOk', false);
+    syncNote('Cloud sync failed: ' + e.message, 'err');
+  } finally {
+    syncBusy = false;
+    scheduleAutoCapture();
+  }
+}
+
+function wireSync() {
+  $('syncRepo').value = store.get('syncRepo', '');
+  $('syncToken').value = store.get('syncToken', '');
+  $('syncSave').addEventListener('click', () => {
+    const repo = $('syncRepo').value.trim().replace(/^https?:\/\/github\.com\//, '').replace(/\/+$/, '');
+    if (!/^[\w.-]+\/[\w.-]+$/.test(repo) || !$('syncToken').value.trim()) {
+      syncNote('Enter the repo as owner/name, and a token.', 'err');
+      return;
+    }
+    store.set('syncRepo', repo);
+    store.set('syncToken', $('syncToken').value.trim());
+    syncNote('Connecting…');
+    syncCycle(true);
+  });
+  $('syncClear').addEventListener('click', () => {
+    ['syncToken', 'syncOk', 'syncLastWatch'].forEach(k => localStorage.removeItem('ge_' + k));
+    $('syncToken').value = '';
+    syncNote('Disconnected. The repo and its data are untouched.');
+    scheduleAutoCapture();
+  });
+}
+
 function clvStats(bets) {
   const rows = bets.map(b => ({ b, c: clvOf(b) })).filter(x => x.c && x.c.counts);
   const evs = rows.map(x => x.c.ev), n = evs.length;
@@ -2434,7 +2687,12 @@ function clvStats(bets) {
   const pnl = graded.reduce((a, b) => a + pnlOf(b), 0);
   const rMean = gn ? rets.reduce((a, v) => a + v, 0) / gn : null;
   const rsd = gn > 1 ? Math.sqrt(rets.reduce((a, v) => a + (v - rMean) ** 2, 0) / (gn - 1)) : null;
+  // Retention: the share of the edge flagged at logging that was still there at the close.
+  const withEdge = rows.filter(x => typeof x.b.edgeAtBet === 'number');
+  const edgeMean = withEdge.length ? withEdge.reduce((a, x) => a + x.b.edgeAtBet, 0) / withEdge.length : null;
+  const clvOnEdge = withEdge.length ? withEdge.reduce((a, x) => a + x.c.ev, 0) / withEdge.length : null;
   return {
+    edgeMean, kept: edgeMean > 0 ? clvOnEdge / edgeMean : null,
     n, mean, se: sd === null ? null : sd / Math.sqrt(n),
     beat: n ? evs.filter(v => v > 0).length / n : null,
     expected: rows.reduce((a, x) => a + (x.b.stake || 0) * x.c.ev, 0),
@@ -2465,7 +2723,20 @@ function clvVerdict(s) {
     Average CLV ${signPct(s.mean)}, but the ${range} straddles zero after ${s.n} closes. Keep logging.${results}</div>`;
 }
 
+// Calibration buckets. Edge size shows whether big flagged edges hold up or are mostly bad
+// data; lead time shows how fast an edge decays between logging and kickoff.
+const EDGE_BUCKETS = [[0.01, 'under 1%'], [0.02, '1–2%'], [0.03, '2–3%'], [0.05, '3–5%'], [Infinity, '5%+']];
+const LEAD_BUCKETS = [[3, 'under 3h'], [12, '3–12h'], [48, '12–48h'], [120, '2–5 days'], [Infinity, '5+ days']];
+function bucketOf(v, buckets) {
+  if (typeof v !== 'number' || isNaN(v)) return '—';
+  return buckets.find(([hi]) => v < hi)[1];
+}
+
 const CLV_GROUPS = {
+  edge:   { label: 'Edge when logged', order: EDGE_BUCKETS.map(x => x[1]).concat('—'),
+            key: b => bucketOf(b.edgeAtBet, EDGE_BUCKETS) },
+  timing: { label: 'Logged before kickoff', order: LEAD_BUCKETS.map(x => x[1]).concat('—'),
+            key: b => { const k = kickMs(b); return k === null ? '—' : bucketOf((k - b.ts) / 3600e3, LEAD_BUCKETS); } },
   market: { label: 'Market', key: b => ({ spreads: 'Spread', totals: 'Total', h2h: 'Moneyline' })[b.market] || b.market },
   book:   { label: 'Book', key: b => b.book || '—' },
   league: { label: 'League', key: b => String(b.league).toUpperCase() },
@@ -2480,17 +2751,22 @@ function clvBreakdown(bets, dim) {
     if (!groups.has(k)) groups.set(k, []);
     groups.get(k).push(b);
   });
+  const order = CLV_GROUPS[dim].order;
   const rows = [...groups.entries()].map(([k, list]) => ({ k, total: list.length, s: clvStats(list) }))
-    .sort((a, b) => b.total - a.total);
+    .sort((a, b) => order ? order.indexOf(a.k) - order.indexOf(b.k) : b.total - a.total);
   return `<table>
     <thead><tr><th>${CLV_GROUPS[dim].label}</th><th class="num">Bets</th><th class="num">Closes</th>
-      <th class="num">Avg CLV</th><th class="num">Beat close</th><th class="num">Graded</th>
+      <th class="num">Avg CLV</th><th class="num" title="Average edge flagged when these bets were logged">Avg edge</th>
+      <th class="num" title="Share of the flagged edge still there at the close">Kept</th>
+      <th class="num">Beat close</th><th class="num">Graded</th>
       <th class="num">P&amp;L</th><th class="num">ROI</th></tr></thead>
     <tbody>${rows.map(r => `<tr>
       <td><strong>${esc(r.k)}</strong></td>
       <td class="num">${r.total}</td>
       <td class="num">${r.s.n}</td>
       <td class="num ${r.s.n ? (r.s.mean >= 0 ? 'pos' : 'neg') : ''}">${r.s.n ? signPct(r.s.mean) : '—'}</td>
+      <td class="num" style="color:var(--text-muted)">${r.s.edgeMean === null ? '—' : signPct(r.s.edgeMean)}</td>
+      <td class="num">${r.s.kept === null ? '—' : pct(r.s.kept, 0)}</td>
       <td class="num">${r.s.n ? pct(r.s.beat, 0) : '—'}</td>
       <td class="num">${r.s.gn}</td>
       <td class="num ${r.s.gn ? (r.s.pnl >= 0 ? 'pos' : 'neg') : ''}">${r.s.gn ? signMoney(r.s.pnl) : '—'}</td>
@@ -2721,6 +2997,18 @@ function wireClv() {
   });
   $('boardAutoLog').checked = store.get('boardAutoLog', true);
   $('boardAutoLog').addEventListener('change', () => store.set('boardAutoLog', $('boardAutoLog').checked));
+  $('paperCount').value = store.get('paperCount', 10);
+  $('paperMinEdge').value = store.get('paperMinEdge', 0.5);
+  $('paperCount').addEventListener('change', () => {
+    const v = parseInt($('paperCount').value, 10);
+    if (v >= 1) store.set('paperCount', v);
+  });
+  $('paperMinEdge').addEventListener('change', () => {
+    const v = parseFloat($('paperMinEdge').value);
+    if (v >= 0) store.set('paperMinEdge', v);
+  });
+  $('scaleEdges').checked = store.get('scaleEdges', true);
+  $('scaleEdges').addEventListener('change', () => { store.set('scaleEdges', $('scaleEdges').checked); renderBoard(); });
   $('clvWindow').addEventListener('change', updateClvHints);
   $('clvAuto').checked = store.get('clvAuto', false);
   $('clvAuto').addEventListener('change', () => { store.set('clvAuto', $('clvAuto').checked); scheduleAutoCapture(); });
@@ -3123,7 +3411,7 @@ function init() {
   if (state.quota.resetDay) $('resetDayInput').value = state.quota.resetDay;
   Object.keys(DEFAULT_PARAMS).forEach(k => { if ($(k)) $(k).value = state.params[k]; });
   $('apiKey').value = store.get('apiKey', '');
-  $('regionSel').value = store.get('regions', 'us,us_ex');
+  $('regionSel').value = regionSetting();
   if (!$('regionSel').value) $('regionSel').value = 'us,eu';   // saved value no longer offered
   const savedMkts = selectedMarkets();
   document.querySelectorAll('.mktChk').forEach(c => c.checked = savedMkts.includes(c.value));
@@ -3214,7 +3502,7 @@ function init() {
 
   const readMkts = () => [...document.querySelectorAll('.mktChk')].filter(c => c.checked).map(c => c.value);
   const syncMktCost = () => {
-    const n = Math.max(1, readMkts().length) * $('regionSel').value.split(',').length;
+    const n = Math.max(1, readMkts().length) * unitsFor($('regionSel').value);
     $('mktCost').textContent = `${n} credit${n === 1 ? '' : 's'} per league fetch · ${Math.floor(500 / (n*2))} both-league scans per month on the free tier`;
   };
   document.querySelectorAll('.mktChk').forEach(c => c.addEventListener('change', () => {
@@ -3331,7 +3619,10 @@ function init() {
   updateClvCount();
   renderClv();
   scheduleAutoCapture();
-  maybeAutoGrade();
+  wireSync();
+  // Pull cloud reads and scores before any local auto-grade can spend credits on the same games.
+  syncCycle(false).finally(maybeAutoGrade);
+  setInterval(() => syncCycle(false), 20 * 60000);
   setInterval(maybeAutoGrade, 3600e3);
 }
 

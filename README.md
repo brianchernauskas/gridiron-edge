@@ -120,7 +120,7 @@ consensus had a real edge whatever happened in the game.
 - **Log bets once they're placed** — from a Best Board row, under a Calibrator verdict, or the whole Slate
   Planner card at its sized stakes. Price, line and stake stay editable to match the actual fill.
 - **Closing reads.** Every normal fetch records the consensus for tracked bets for free. **Capture closes**
-  pulls only the games and markets you have bets on, US region only (LowVig and BetOnline anchor it), so a
+  pulls only the games and markets you have bets on, from a fixed ten-book list anchored by Pinnacle and LowVig, so a
   kickoff window costs a credit or two. Optional auto-capture fires 10 minutes before each kickoff while the
   page is open — a static page has nowhere else to run.
 - **CLV** re-prices each bet at its own line and price against the last pre-kickoff consensus, through the
@@ -133,11 +133,17 @@ consensus had a real edge whatever happened in the game.
   Breakdowns by market, book, league and source show where an edge holds or leaks.
 
 **Board picks as paper bets.** With *Log every pick as a paper bet* on (the default, Best Board tab), each
-fetch logs the board's top picks per league — at the Top N and minimum edge set there, at the suggested
+fetch logs the board's top picks per league — top 10 at 0.5% edge or better by default, deliberately wider than the board, at the suggested
 stake — the first time each team or total is flagged. They capture closes, grade and report exactly like
 placed bets but sit in their own view, so the board's record and yours never mix. Finished games
 auto-grade on load and hourly while the page is open, at most every 6 hours (2 credits per league). The
 scores endpoint only reaches back 3 days, so open the page at least that often or grade stragglers by hand.
+
+**Calibration.** Two breakdowns exist to tune the board: **by edge when logged** (do big flagged edges
+hold up, or are they mostly bad data?) and **by hours before kickoff** (how fast does an edge decay?). Each
+shows *Kept* — the share of the flagged edge still there at the close. Once board picks have 30 closes, the
+Best Board scales every edge, stake and its minimum-edge filter by that retention (clamped to 0–1; a
+checkbox shows raw numbers). Paper picks always log raw edges, so the measurement never feeds on itself.
 
 The log lives in this browser. Export CSV for analysis, and back up to JSON — clearing site data clears it.
 
@@ -179,6 +185,12 @@ books — 6 for both, or about 83 full scans a month. Dropping moneyline makes i
 month, at the cost of the Best Board's spread-versus-moneyline comparison. Every extra region
 multiplies all of this.
 
+**Name books instead of regions.** The API bills every 10 named books as one region. The default fetch —
+*Your books + Pinnacle & LowVig* — requests your picked books plus the two sharp anchors, filling any unused
+slots in the last group of ten with deep US books. Up to 10 books costs the same as one region, so it gets
+Pinnacle (otherwise only in the EU region) into the consensus for less than the regions your books sit in.
+LowVig stands in for BetOnline, which prices almost identically.
+
 **Slates are cached in the browser.** Reopening the app, reloading the page, and switching leagues all
 cost nothing; only "Fetch live odds" spends credits. One fetch pulls every game in the league and the
 selector then works entirely offline against that snapshot, so pull once per slate and work the whole
@@ -189,6 +201,29 @@ slate. There's also a manual line-entry path for when quota runs out or lines ar
 
 If you genuinely outgrow 500 credits, the paid tier is $30/month for 20,000. Running multiple free
 accounts to extend the quota violates their terms and risks all of the keys.
+
+### Cloud tracking
+
+Auto-capture and auto-grade only run while the page is open. Cloud tracking moves both into a scheduled
+GitHub Action in a **private** repo, using the files in [`cloud/`](cloud/):
+
+1. Create a private repo (e.g. `gridiron-edge-data`). Put `cloud/tracker.mjs` at its root and
+   `cloud/tracker.yml` at `.github/workflows/tracker.yml`.
+2. Add your Odds API key as an Actions secret named `ODDS_API_KEY`.
+3. Create a fine-grained personal access token with access to **that repo only** and
+   **Contents: read and write**. Paste the repo and token into Settings → Cloud tracking.
+
+The page writes `watch.json` — games with open or ungraded bets: ids, kickoff times, markets, no stakes or
+books. Every 15 minutes through football kickoff windows, the Action captures one closing read per game
+within 40 minutes of kickoff (ten named books, one credit per market) and pulls final scores every 3 hours
+once games finish (2 credits per league). It writes the raw responses to `closes.json` and `scores.json`
+and stops spending below 60 remaining credits. The page prices and grades those with its own model when it
+next opens, so the logic lives in one place; while cloud tracking is connected, the page's own auto-capture
+and auto-grade stand down so credits aren't spent twice.
+
+Cost: roughly 1,000 Actions minutes a month against a private repo's 2,000 free, since runs are confined
+to kickoff windows. The token lives in browser storage that other github.io Pages sites on the same
+account domain can read, which is why it should be scoped to the one data repo.
 
 ### About the key
 
