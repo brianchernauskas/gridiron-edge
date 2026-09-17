@@ -171,6 +171,12 @@
   .clv-res { width: auto; padding: 4px 6px; font-size: .82rem; }
 
 
+  /* Demo mode banner */
+  .demo-bar { background: var(--warn-light); border-bottom: 1px solid var(--warn); padding: 10px 24px; font-size: .84rem; color: var(--text); display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .demo-bar strong { color: var(--warn); text-transform: uppercase; letter-spacing: .06em; font-size: .74rem; border: 1px solid var(--warn); border-radius: 999px; padding: 2px 9px; white-space: nowrap; }
+  .demo-bar .demo-age { color: var(--text-muted); }
+  .demo-bar a { color: var(--accent); }
+
   /* Which-bet recommender */
   .reco-sub { font-size: .7rem; color: var(--text-muted); margin-top: 2px; font-weight: 400; }
   .reco-short td { opacity: .5; }
@@ -262,6 +268,8 @@
   <button class="tab" data-panel="situational">Situational Scorer</button>
   <button class="tab" data-panel="settings">Settings</button>
 </nav>
+
+<div class="demo-bar" id="demoBar" style="display:none"></div>
 
 <main>
 
@@ -660,7 +668,8 @@
 <!-- ============ SETTINGS ============ -->
 <section class="panel" id="panel-settings">
   <div class="section">
-    <div class="section-title"><span>Odds API</span></div>
+    <div class="section-title"><span>Odds API</span><span class="section-note" id="demoSettingsNote"></span></div>
+    <div id="demoSettingsBox" style="display:none"></div>
     <p style="font-size:.85rem;color:var(--text-muted);margin-bottom:14px">
       Uses <strong>the-odds-api.com</strong>. The free tier is 500 credits/month, and the /odds endpoint
       bills <strong>credits = markets × regions</strong> — so three markets across US books costs 3 credits
@@ -1069,6 +1078,7 @@ let state = {
   league: 'nfl',
   games: { nfl: [], cfb: [] },
   manualGame: null,
+  demo: null,                 // set by loadDemoSlate when running without a key
   ratings: {},
   params: { ...DEFAULT_PARAMS },
   lean: { pts: 0, side: 'home', label: '' },
@@ -1285,6 +1295,7 @@ function renderQuotaCycle() {
 }
 
 function cacheAge(league) {
+  if (demoActive()) return Math.round((Date.now() - state.demo.ts) / 60000);
   const c = store.get('cache_' + league, null);
   if (!c || !c.ts) return null;
   return Math.round((Date.now() - c.ts) / 60000);       // minutes
@@ -1341,7 +1352,11 @@ function updateCostNote() {
 async function fetchOdds() {
   const key = store.get('apiKey', '');
   if (!key) {
-    $('loadStatus').textContent = 'No API key saved — add one on the Settings tab, or use manual entry.';
+    // In demo mode this button is the most obvious thing to press, so it has to explain
+    // itself rather than just refuse. Nobody's credits are spent either way.
+    $('loadStatus').textContent = demoActive()
+      ? 'Demo mode — showing a saved slate. Live odds need your own key (free, on the Settings tab).'
+      : 'No API key saved — add one on the Settings tab, or use manual entry.';
     $('loadStatus').className = 'status-line err';
     return;
   }
@@ -1911,7 +1926,9 @@ function renderBoard() {
     if (!loaded) {
       return `<div class="section">
         <div class="section-title"><span>${label}</span><span class="section-note">no slate loaded</span></div>
-        <div class="empty-state">${started
+        <div class="empty-state">${demoActive()
+          ? `Every ${lg.toUpperCase()} game in the demo snapshot has kicked off. It refreshes a couple of times a week — check back, or add your own odds key on the Settings tab.`
+          : started
           ? `All ${started} game${started === 1 ? '' : 's'} in the saved ${lg.toUpperCase()} slate have kicked off.<br>Use “Fetch both leagues” above to load the next one.`
           : `Switch to ${lg.toUpperCase()} on the Calibrator tab and fetch odds, or use “Fetch both leagues” above.`}</div>
       </div>`;
@@ -3092,6 +3109,114 @@ function wireClv() {
 }
 
 /* ============================================================
+   Demo mode
+
+   The app is useless without an odds key, and a key is a signup, a quota and a
+   credit card's worth of friction for someone who just wants to see what this
+   does. So a snapshot of a recent slate is committed to the repo, and a visitor
+   with no key of their own gets the whole app running on it: every tab, every
+   calculation, real prices from real books, no signup and nobody's credits spent.
+
+   It is deliberately not live, and says so on every screen. A stale line is a
+   genuinely dangerous thing to hand someone in a betting tool — the number moved
+   for a reason and the price is gone — so the banner leads with the age of the
+   data and the instruction not to bet off it.
+
+   Refreshed by .github/workflows/demo-slate.yml. See tools/refresh-demo.mjs.
+   ============================================================ */
+const DEMO_URL = 'demo/slate.json';
+
+function demoActive() { return !!state.demo; }
+function hasKey() { return !!store.get('apiKey', ''); }
+
+// Load the committed snapshot into memory only. It never touches the localStorage
+// slate cache, so it cannot be mistaken later for something this browser fetched,
+// and it never logs paper bets or records closes — that history has to come from
+// live reads or it is worthless.
+async function loadDemoSlate() {
+  if (hasKey()) return false;
+  try {
+    const res = await fetch(DEMO_URL, { cache: 'no-store' });
+    if (!res.ok) return false;
+    const snap = await res.json();
+    const ts = snap.fetchedAt ? new Date(snap.fetchedAt).getTime() : NaN;
+    if (!isFinite(ts)) return false;
+    let games = 0;
+    ['nfl', 'cfb'].forEach(lg => {
+      if (Array.isArray(snap[lg])) { state.games[lg] = snap[lg]; games += snap[lg].length; }
+    });
+    if (!games) return false;
+    state.demo = { ts, total: games };
+    return true;
+  } catch (e) { return false; }
+}
+
+function demoAgo(mins) {
+  if (mins < 1) return 'moments ago';
+  if (mins < 60) return mins + ' minute' + (mins === 1 ? '' : 's') + ' ago';
+  const h = Math.round(mins / 60);
+  if (h < 24) return h + ' hour' + (h === 1 ? '' : 's') + ' ago';
+  const d = Math.round(h / 24);
+  return d + ' day' + (d === 1 ? '' : 's') + ' ago';
+}
+
+function renderDemoBar() {
+  const bar = $('demoBar');
+  if (!bar) return;
+  if (!demoActive()) { bar.style.display = 'none'; return; }
+  const mins = Math.round((Date.now() - state.demo.ts) / 60000);
+  const live = slate('nfl').length + slate('cfb').length;
+  bar.style.display = 'flex';
+  bar.innerHTML = '<strong>Demo data</strong>'
+    + '<span class="demo-age">Lines captured ' + demoAgo(mins) + ', '
+    + (live ? live + ' game' + (live === 1 ? '' : 's') + ' still to kick off'
+            : 'and every game in the snapshot has now kicked off') + '.</span>'
+    + '<span>Everything works and nothing here is live &mdash; <strong style="border:none;padding:0;'
+    + 'text-transform:none;letter-spacing:0;font-size:inherit">do not bet off these prices</strong>. '
+    + 'For live odds, add your own free key on the '
+    + '<a href="#" id="demoSettingsLink">Settings</a> tab.</span>';
+  const link = $('demoSettingsLink');
+  if (link) link.addEventListener('click', ev => {
+    ev.preventDefault();
+    document.querySelector('.tab[data-panel="settings"]').click();
+    window.scrollTo(0, 0);
+  });
+}
+
+// The snapshot is only worth showing while some of it is still ahead of kickoff.
+// Once it is all in the past every tab empties out, and an empty app reads as broken
+// rather than as stale, so the emptiness gets explained where the games would be.
+function renderDemoSettings() {
+  const box = $('demoSettingsBox'), note = $('demoSettingsNote');
+  if (!box || !note) return;
+  if (!demoActive()) { box.style.display = 'none'; note.textContent = ''; return; }
+  const mins = Math.round((Date.now() - state.demo.ts) / 60000);
+  note.textContent = 'running in demo mode';
+  box.style.display = 'block';
+  box.innerHTML = '<div class="callout"><strong>You are using the demo slate</strong>'
+    + 'No key is needed to look around: this page is running on a snapshot of real prices captured '
+    + demoAgo(mins) + ', covering ' + state.demo.total + ' games across both leagues. Every tab '
+    + 'works against it, and it costs nobody any credits.<br><br>'
+    + 'What the demo cannot do is tell you what a book is offering <em>now</em>, which is the only '
+    + 'thing worth betting off. For that you need your own key — the free tier is 500 credits a month, '
+    + 'which is roughly 80 full scans, and takes a minute to set up at '
+    + '<a href="https://the-odds-api.com" target="_blank" rel="noopener">the-odds-api.com</a>. '
+    + 'Paste it below and this notice disappears.</div>';
+}
+
+function demoExhausted() {
+  return demoActive() && slate('nfl').length + slate('cfb').length === 0;
+}
+
+function demoEmptyNote() {
+  return '<div class="section"><div class="empty-state">'
+    + '<strong>The demo slate has run out.</strong><br>'
+    + 'Every game in the snapshot has kicked off. It refreshes a couple of times a week — '
+    + 'check back, or add your own odds key on the Settings tab for live lines.'
+    + '</div></div>';
+}
+
+/* ============================================================
    Which bet? — one game, all six contracts, ranked
 
    The calibrator prices one contract at a time, which is the right tool once you
@@ -3470,7 +3595,11 @@ function render() {
   const list = state.listed || currentGameList();
   const gi = $('gameSel').value;
   const game = list[gi];
-  if (!game) { wrap.innerHTML = '<div class="section"><div class="empty-state">Load live odds or add a game manually to begin.</div></div>'; return; }
+  if (!game) {
+    wrap.innerHTML = demoExhausted() ? demoEmptyNote()
+      : '<div class="section"><div class="empty-state">Load live odds or add a game manually to begin.</div></div>';
+    return;
+  }
 
   const market = $('marketSel').value;
   const side = $('sideSel').value;
@@ -4038,6 +4167,14 @@ function init() {
 
   $('saveKey').addEventListener('click', () => {
     store.set('apiKey', $('apiKey').value.trim());
+    // A key means live odds from here on. Drop the snapshot rather than leave real
+    // prices sitting underneath a banner that no longer shows.
+    if (demoActive() && hasKey()) {
+      state.demo = null;
+      state.games = { nfl: [], cfb: [] };
+      restoreCache();
+      renderDemoBar(); renderDemoSettings(); populateGames(); renderBoard(); renderCacheInfo();
+    }
     store.set('regions', $('regionSel').value);
     store.set('markets', readMkts());
     $('keyStatus').textContent = 'Saved to this browser.';
@@ -4075,6 +4212,18 @@ function init() {
   updateCardCount();
   renderAll();
   renderBoard();
+
+  // Asynchronous and last, so a visitor with no key sees the app immediately and the
+  // slate fills in behind it. A failed or missing snapshot leaves the app exactly as it
+  // was before demo mode existed.
+  loadDemoSlate().then(ok => {
+    if (!ok) return;
+    renderDemoBar();
+    renderDemoSettings();
+    populateGames();
+    renderBoard();
+    renderCacheInfo();
+  });
   renderPlanner();
   wireClv();
   updateClvCount();

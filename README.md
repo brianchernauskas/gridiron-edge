@@ -266,6 +266,44 @@ Cost: roughly 1,000 Actions minutes a month against a private repo's 2,000 free,
 to kickoff windows. The token lives in browser storage that other github.io Pages sites on the same
 account domain can read, which is why it should be scoped to the one data repo.
 
+### Sharing it without sharing your key
+
+The app is useless without an odds key, and a key is a signup and a quota — too much friction for
+someone who just wants to see what this does. So `demo/slate.json` holds a snapshot of a recent slate,
+and **a visitor with no key of their own gets the whole app running on it**: every tab, real prices from
+real books, no signup, and nobody's credits spent. Your key is never in the page, never in the repo, and
+never handed to anyone.
+
+It is deliberately not live and says so everywhere — a banner above every tab leads with the age of the
+data and the instruction not to bet off it, because a stale line is a genuinely dangerous thing to put in
+front of someone. The Best Board's existing "these prices are N hours old" warning fires off the snapshot
+age too. Once every game in it has kicked off, each tab explains that rather than just going empty.
+
+The snapshot is loaded into memory only. It never enters the localStorage slate cache, never logs paper
+bets and never records closes, so a visitor's CLV history can't be polluted by prices nobody could have
+bet. **Saving a key exits demo mode permanently** and drops the snapshot rather than leave stale prices
+sitting under a banner that no longer shows. If you already have a key saved, `demo/slate.json` is never
+even requested.
+
+#### Refreshing it
+
+```bash
+ODDS_API_KEY=your-key node tools/refresh-demo.mjs
+```
+
+Or let [`.github/workflows/demo-slate.yml`](.github/workflows/demo-slate.yml) do it — add `ODDS_API_KEY`
+as an Actions secret (Settings → Secrets and variables → Actions) and it runs Wednesday and Saturday
+mornings, committing the result only when it changed.
+
+Cost is the same billing as the app: 3 credits per league, 6 a run, about **52 credits a month** against
+the 500-credit free tier. Drop a cron line to halve it. The script refuses to run below 60 remaining
+credits, so a demo refresh is the first thing to stop spending rather than the thing that empties your
+quota. An empty pull in the off-season leaves the previous snapshot in place — last week's games beat no
+games.
+
+Until you run it once there is no snapshot, and the app behaves exactly as it did before: no key, no
+slate, manual entry only.
+
 ### About the key
 
 Your key is stored in `localStorage` under `ge_apiKey` and is sent only to `api.the-odds-api.com`.
