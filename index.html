@@ -171,6 +171,12 @@
   .clv-res { width: auto; padding: 4px 6px; font-size: .82rem; }
 
 
+  /* Which-bet recommender */
+  .reco-sub { font-size: .7rem; color: var(--text-muted); margin-top: 2px; font-weight: 400; }
+  .reco-short td { opacity: .5; }
+  .reco-divider { font-size: .74rem; color: var(--text-muted); font-style: italic; padding-top: 14px !important; }
+  .reco-bar { height: 6px; background: var(--surface2); border-radius: 3px; overflow: hidden; min-width: 54px; display: inline-block; vertical-align: middle; }
+  .reco-bar span { display: block; height: 100%; background: var(--accent); border-radius: 3px; }
   .callout { border-left: 3px solid var(--warn); background: var(--warn-light); padding: 11px 14px; border-radius: 0 7px 7px 0; font-size: .84rem; margin-top: 14px; }
   .callout.info { border-left-color: var(--accent); background: var(--accent-light); }
   .callout strong { display: block; margin-bottom: 3px; }
@@ -311,35 +317,12 @@
   </div>
 
   <div class="section" id="pickSection">
-    <div class="section-title"><span>2 · Pick the bet</span></div>
+    <div class="section-title"><span>2 · Pick the game</span></div>
     <div class="form-grid">
       <div class="form-group full">
         <label>Game</label>
         <select id="gameSel"><option value="">— load odds first —</option></select>
       </div>
-      <div class="form-group">
-        <label>Market</label>
-        <select id="marketSel">
-          <option value="spreads">Spread</option>
-          <option value="totals">Total</option>
-          <option value="h2h">Moneyline</option>
-        </select>
-      </div>
-      <div class="form-group">
-        <label>Side you're betting</label>
-        <select id="sideSel">
-          <option value="home">Home</option>
-          <option value="away">Away</option>
-        </select>
-      </div>
-      <div class="form-group">
-        <label id="estLabel">Your projected home margin</label>
-        <input id="estInput" type="number" step="0.5" value="0">
-        <span class="hint" id="estHint">Positive = home wins by that much</span>
-      </div>
-    </div>
-
-    <div class="form-grid" style="margin-top:14px">
       <div class="form-group">
         <label>Bankroll ($)</label>
         <input id="bankroll" type="number" step="50" value="1000">
@@ -359,6 +342,99 @@
           <input type="checkbox" id="useLean"> <span id="leanLabel">None set</span>
         </label>
         <span class="hint">Set on the Situational tab</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="section" id="recoSection">
+    <div class="section-title">
+      <span>3 · Which bet should I take?</span>
+      <span class="section-note">all six contracts on this game, side by side</span>
+    </div>
+    <p style="font-size:.85rem;color:var(--text-muted);margin-bottom:14px">
+      A game gives you six ways in — either moneyline, either spread, over or under. They are not
+      interchangeable: the same opinion priced as a moneyline and as a spread can differ by several
+      points of vig, and a −450 favourite pays so little that being right barely matters. This ranks
+      all six at the <strong>best price any of your books is showing</strong>, and picks the one that
+      best fits the kind of bet you want.
+    </p>
+    <div class="form-grid">
+      <div class="form-group">
+        <label>Kind of bet you want</label>
+        <select id="recoTarget">
+          <option value="0.75">Likely winner — about 75% to hit</option>
+          <option value="0.60" selected>Balanced — about 60% to hit</option>
+          <option value="0.45">Good payout — about 45% to hit</option>
+          <option value="0.30">Swing for it — about 30% to hit</option>
+        </select>
+        <span class="hint">The shape you're after, not a prediction</span>
+      </div>
+      <div class="form-group">
+        <label>Skip anything paying less than</label>
+        <select id="recoMinPay">
+          <option value="0">No floor</option>
+          <option value="-400">−400 (wins $25 per $100)</option>
+          <option value="-250">−250 (wins $40 per $100)</option>
+          <option value="-200" selected>−200 (wins $50 per $100)</option>
+          <option value="-150">−150 (wins $67 per $100)</option>
+          <option value="-110">−110 (wins $91 per $100)</option>
+        </select>
+        <span class="hint">Keeps short favourites off the list</span>
+      </div>
+      <div class="form-group">
+        <label>Risk ($)</label>
+        <input id="recoStake" type="number" step="5" min="1" value="20">
+        <span class="hint">What you'd actually put down for fun</span>
+      </div>
+    </div>
+    <div class="form-grid" style="margin-top:14px">
+      <div class="form-group">
+        <label>Your projected margin <span style="color:var(--text-muted);font-weight:400">(optional)</span></label>
+        <input id="recoMargin" type="number" step="0.5" placeholder="blank = use the market">
+        <span class="hint">Home margin. Positive = home wins by that much</span>
+      </div>
+      <div class="form-group">
+        <label>Your projected total <span style="color:var(--text-muted);font-weight:400">(optional)</span></label>
+        <input id="recoTotal" type="number" step="0.5" placeholder="blank = use the market">
+        <span class="hint">Combined points you expect</span>
+      </div>
+      <div class="form-group">
+        <label>&nbsp;</label>
+        <span class="hint" style="font-style:normal">
+          Leave both blank and this ranks on price and shape alone. Fill either one in and the bets are
+          re-priced against your number, and a genuine edge takes over the ranking.
+        </span>
+      </div>
+    </div>
+  </div>
+
+  <div id="recoWrap"></div>
+
+  <div class="section" id="drillSection">
+    <div class="section-title">
+      <span>4 · Price one bet yourself</span>
+      <span class="section-note">optional — the full book-by-book view for a single contract</span>
+    </div>
+    <div class="form-grid">
+      <div class="form-group">
+        <label>Market</label>
+        <select id="marketSel">
+          <option value="spreads">Spread</option>
+          <option value="totals">Total</option>
+          <option value="h2h">Moneyline</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Side you're betting</label>
+        <select id="sideSel">
+          <option value="home">Home</option>
+          <option value="away">Away</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label id="estLabel">Your projected home margin</label>
+        <input id="estInput" type="number" step="0.5" value="0">
+        <span class="hint" id="estHint">Positive = home wins by that much</span>
       </div>
     </div>
   </div>
@@ -1333,7 +1409,7 @@ function populateGames() {
   const list = state.listed = currentGameList();
   if (!list.length) {
     sel.innerHTML = '<option value="">— no games loaded —</option>';
-    render();
+    renderAll();
     return;
   }
   sel.innerHTML = list.map((g, i) => {
@@ -1343,7 +1419,7 @@ function populateGames() {
     return `<option value="${i}">${g.away_team} @ ${g.home_team} — ${when}</option>`;
   }).join('');
   sel.value = (prev && list[prev]) ? prev : '0';
-  render();
+  renderAll();
 }
 
 /* ============================================================
@@ -3015,6 +3091,380 @@ function wireClv() {
   document.querySelector('.tab[data-panel="clv"]').addEventListener('click', renderClv);
 }
 
+/* ============================================================
+   Which bet? — one game, all six contracts, ranked
+
+   The calibrator prices one contract at a time, which is the right tool once you
+   know what you want to bet and the wrong one when the question is "I'm betting this
+   game — what should I take?". A game offers six ways in and they are genuinely not
+   interchangeable: on a double-digit favourite the moneyline can carry several times
+   the effective vig of the spread, and pays so little that being right barely moves
+   the needle. That difference is visible without any projection of your own, so this
+   panel works from a blank slate and sharpens if you fill one in.
+
+   Two rankings, and the panel says which one is live:
+     · Edge  — a book is priced away from the sharp consensus, or away from your
+               projection. Real money, rare, and it outranks everything else.
+     · Fit   — nothing is mispriced, so the question becomes which shape of bet you
+               want at the best price available. Explicitly a preference, not maths.
+   ============================================================ */
+
+// The six contracts a single game offers.
+const RECO_LEGS = [
+  ['h2h', 'home'], ['h2h', 'away'],
+  ['spreads', 'home'], ['spreads', 'away'],
+  ['totals', 'home'], ['totals', 'away']
+];
+
+// Above this, a genuine edge takes over the ranking from the fit score.
+const RECO_EDGE_TAKEOVER = 0.01;
+
+// Consensus implied number, degrading gracefully. marketConsensus needs three other
+// books before it will answer; a single-game view often has fewer, and refusing to
+// say anything is worse than saying it with a caveat. Leave-one-out whenever the
+// board is deep enough for it, the full field when it isn't.
+function recoConsensus(game, market, side, league, excludeBook) {
+  const all = collectQuotes(game, market, side);
+  if (!all.length) return null;
+  const loo = all.filter(q => q.book !== excludeBook);
+  const deep = loo.length >= MIN_BOOKS_FOR_CONSENSUS - 1;
+  const use = deep ? loo : all;
+  if (!use.length) return null;
+  const num = weightedMedian(use.map(q => ({ v: quoteToNumber(q, market, side, league), w: q.weight })));
+  if (num === null || !isFinite(num)) return null;
+  return { number: num, n: all.length, leaveOneOut: deep,
+           sharpN: all.filter(q => q.tier === 'sharp').length };
+}
+
+// The preference weight that makes `targetP` the most attractive win rate.
+// fit = p^(1-w) · b^w, and at fair odds b = (1-p)/p, so fit = p^(1-2w)·(1-p)^w,
+// which peaks at p* = (1-2w)/(1-w). Inverting gives w for the p* the user picked —
+// so the control can be a win rate they understand rather than an exponent.
+function recoWeight(targetP) {
+  const p = Math.min(0.95, Math.max(0.05, targetP));
+  return (1 - p) / (2 - p);
+}
+
+// Best price on each of the six contracts, evaluated against the market and, if one
+// is supplied, against your own number. Line shopping is by EV rather than by raw
+// price, so a better number at a worse price still wins where it should.
+function recoCandidates(game, league, opts) {
+  const only = myBooks();
+  const out = [];
+  RECO_LEGS.forEach(([market, side]) => {
+    const quotes = collectQuotes(game, market, side);
+    if (!quotes.length) return;
+    // Consensus is built from every book; the bet itself only counts at a book you
+    // can actually get down at — the same rule the Best Board uses.
+    const usable = only.length ? quotes.filter(q => only.includes(q.key)) : quotes;
+    if (!usable.length) { out.push({ market, side, blocked: 'books', books: quotes.length }); return; }
+
+    const proj = market === 'totals' ? opts.projTotal : opts.projMargin;
+    let best = null;
+    usable.forEach(q => {
+      const cons = recoConsensus(game, market, side, league, q.book);
+      if (!cons) return;
+      // `fair` always prices the quote against the market, whatever drives the EV.
+      // It is what makes the vig comparable across contracts — the number that says a
+      // -450 moneyline is a far worse deal than the spread it is equivalent to.
+      const fair = evaluateRow(q, market, side, cons.number, league, opts.bankroll, opts.kf);
+      const row  = proj === null ? fair
+                 : evaluateRow(q, market, side, proj, league, opts.bankroll, opts.kf);
+      const cand = { market, side, q, row, fair, cons, projected: proj !== null,
+                     books: quotes.length };
+      if (!best || row.ev > best.row.ev) best = cand;
+    });
+    if (best) out.push(best);
+  });
+  return out;
+}
+
+// Rank the live candidates. Edge wins outright when there is one; otherwise the fit
+// score decides, and the payout floor removes anything too short to be worth watching.
+function recoRank(cands, targetP, minB) {
+  const live = cands.filter(c => !c.blocked);
+  const w = recoWeight(targetP);
+  live.forEach(c => {
+    const p = c.row.myProb;              // push-excluded, so it is comparable across markets
+    const b = c.row.dec - 1;             // net of exchange fees, so it is what you actually collect
+    c.payout = b;
+    c.shortPay = b < minB;
+    // A price better than fair lifts the score and a worse one cuts it, in the same
+    // units the EV is already measured in — no separate fudge factor.
+    c.fit = Math.pow(Math.max(p, 1e-6), 1 - w) * Math.pow(Math.max(b, 1e-6), w) * (1 + c.fair.ev);
+  });
+  const eligible = live.filter(c => !c.shortPay);
+  const pool = eligible.length ? eligible : live;
+  const byFit = pool.slice().sort((a, b) => b.fit - a.fit);
+  const topEdge = pool.reduce((m, c) => Math.max(m, c.row.ev), -Infinity);
+  const mode = topEdge >= RECO_EDGE_TAKEOVER ? 'edge' : 'fit';
+  // An edge only settles the top line. Everything under it is a bet you would be making
+  // on preference anyway, so it stays ordered by fit — otherwise the fit column descends
+  // out of order and the table quietly contradicts itself.
+  const pick = mode === 'edge'
+    ? pool.reduce((best, c) => c.row.ev > best.row.ev ? c : best, pool[0])
+    : byFit[0];
+  const ranked = pick ? [pick].concat(byFit.filter(c => c !== pick)) : [];
+  const bestFit = live.reduce((m, c) => Math.max(m, c.fit), 0);
+  live.forEach(c => c.fitPct = bestFit > 0 ? Math.round(100 * c.fit / bestFit) : 0);
+  return { ranked, mode, pick: pick || null,
+           benched: live.filter(c => pool.indexOf(c) === -1).sort((a, b) => b.fit - a.fit) };
+}
+
+function recoLegName(game, c) {
+  if (c.market === 'totals') return (c.side === 'home' ? 'Over ' : 'Under ') + Math.abs(c.row.line);
+  const team = c.side === 'home' ? game.home_team : game.away_team;
+  if (c.market === 'h2h') return team + ' ML';
+  return team + ' ' + fmtLine(c.row.line);
+}
+
+function recoMarketName(m) { return m === 'h2h' ? 'Moneyline' : m === 'totals' ? 'Total' : 'Spread'; }
+
+// Why this one and not the others, in a sentence a person would actually say.
+function recoReason(r, c, stake) {
+  const win = stake * c.payout;
+  const shape = 'It hits about ' + pct(c.row.myProb, 0) + ' of the time and pays $'
+              + win.toFixed(0) + ' on $' + stake.toFixed(0);
+  if (r.mode === 'edge') {
+    const size = '<strong>' + (c.row.ev * 100).toFixed(1) + '% of edge</strong>, worth $'
+               + (c.row.ev * 100).toFixed(2) + ' per $100 risked. ' + shape + '.';
+    // Two very different edges wear the same number. One says a book is slow and will be
+    // corrected; the other says you are right and the whole market is wrong. Only the first
+    // is a reason to hurry, and conflating them is how a bad projection becomes a bet.
+    if (c.projected) {
+      return 'Priced against <strong>your own number</strong>, this is the contract that gains the '
+           + 'most from being right — ' + size + ' That edge is entirely your projection: the market '
+           + 'disagrees, and it is the side with more information. Check the input before the edge.';
+    }
+    return esc(c.q.book) + ' is priced away from the sharp consensus on this one — ' + size
+         + ' Take the price, not the team: the edge lives in this contract, and it decays as the '
+         + 'number corrects.';
+  }
+  const vig = -c.fair.ev;
+  const vigNote = vig <= 0 ? 'and it is priced at or better than fair'
+    : vig < 0.025 ? 'and you are only paying ' + pct(vig) + ' to the house — the cheapest way into this game'
+    : 'and you are paying ' + pct(vig) + ' to the house, which is the least bad of what is on offer here';
+  return 'Nothing on this board is mispriced, so this is the contract that best fits the bet you asked '
+       + 'for. ' + shape + ', ' + vigNote + '.';
+}
+
+function renderReco() {
+  const wrap = $('recoWrap');
+  if (!wrap) return;
+  const list = state.listed || currentGameList();
+  const game = list[$('gameSel').value];
+  if (!game) { wrap.innerHTML = ''; return; }
+
+  const league = state.league;
+  const stake = Math.max(1, parseFloat($('recoStake').value) || 20);
+  const targetP = parseFloat($('recoTarget').value) || 0.6;
+  const minPay = parseFloat($('recoMinPay').value) || 0;
+  const minB = minPay ? americanToDecimal(minPay) - 1 : 0;
+  const bankroll = parseFloat($('bankroll').value) || 0;
+  const kf = parseFloat($('kellyFrac').value);
+
+  const rawMargin = $('recoMargin').value.trim();
+  const rawTotal  = $('recoTotal').value.trim();
+  let projMargin = rawMargin === '' ? null : parseFloat(rawMargin);
+  let projTotal  = rawTotal  === '' ? null : parseFloat(rawTotal);
+  if (projMargin !== null && !isFinite(projMargin)) projMargin = null;
+  if (projTotal  !== null && !isFinite(projTotal))  projTotal  = null;
+
+  // A situational lean is an adjustment, not a projection. With no margin of your own
+  // it is applied to the market's number, which is the only sensible base for it.
+  let leanNote = '';
+  if ($('useLean').checked && state.lean.pts !== 0 && projMargin === null) {
+    const base = recoConsensus(game, 'spreads', 'home', league, null)
+              || recoConsensus(game, 'h2h', 'home', league, null);
+    if (base) {
+      const adj = state.lean.side === 'home' ? state.lean.pts : -state.lean.pts;
+      projMargin = base.number + adj;
+      const leanTeam = state.lean.side === 'home' ? game.home_team : game.away_team;
+      leanNote = '<div class="callout info"><strong>Situational lean applied to the market’s number</strong>'
+        + 'The market makes it ' + esc(game.home_team) + ' by '
+        + (base.number >= 0 ? '' : '−') + Math.abs(base.number).toFixed(1) + '; your '
+        + (adj > 0 ? '+' : '−') + Math.abs(adj).toFixed(1) + ' toward ' + esc(leanTeam)
+        + (state.lean.label ? ' (' + esc(state.lean.label) + ')' : '') + ' makes it '
+        + (projMargin > 0 ? '+' : '') + projMargin.toFixed(1) + '. Spreads and moneylines are priced '
+        + 'off that; totals still use the market.</div>';
+    }
+  }
+
+  const cands = recoCandidates(game, league, { bankroll, kf, projMargin, projTotal });
+  const live = cands.filter(c => !c.blocked);
+  if (!live.length) {
+    wrap.innerHTML = '<div class="section"><div class="empty-state">'
+      + 'No book in your list is posting a price on this game. Widen the book filter in Settings, '
+      + 'or fetch odds again.</div></div>';
+    return;
+  }
+
+  const r = recoRank(cands, targetP, minB);
+  const pick = r.pick;
+  const showEdgeCol = !!(pick && pick.projected);
+  const cols = showEdgeCol ? 8 : 7;
+  const thinBoard = live.some(c => c.cons && !c.cons.leaveOneOut);
+  const missingMkts = ['h2h', 'spreads', 'totals'].filter(m => !live.some(c => c.market === m));
+
+  const row = (c, isPick) => {
+    const vig = -c.fair.ev;
+    const tags = recoMarketName(c.market)
+      + (c.q.tier === 'sharp' ? ' · sharp book' : '')
+      + (isExchange(c.q.key) ? ' · exchange, fee included' : '');
+    return '<tr class="' + (isPick ? 'best' : '') + (c.shortPay ? ' reco-short' : '') + '">'
+      + '<td>' + (isPick ? '<span class="pill best">TAKE</span> ' : '')
+      + '<strong>' + esc(recoLegName(game, c)) + '</strong>'
+      + '<div class="reco-sub">' + tags + '</div></td>'
+      + '<td class="num">' + fmtPrice(c.q.price) + '<div class="reco-sub">' + esc(c.q.book) + '</div></td>'
+      + '<td class="num">' + pct(c.row.myProb, 0)
+      + (c.row.pushProb && c.market !== 'h2h' ? '<div class="reco-sub">' + pct(c.row.pushProb) + ' push</div>' : '') + '</td>'
+      + '<td class="num">$' + (stake * c.payout).toFixed(0)
+      + '<div class="reco-sub">on $' + stake.toFixed(0) + '</div></td>'
+      + '<td class="num ' + (vig <= 0 ? 'pos' : '') + '">' + (vig <= 0 ? '+' : '') + pct(Math.abs(vig))
+      + '<div class="reco-sub">' + (vig <= 0 ? 'better than fair' : 'to the house') + '</div></td>'
+      + (showEdgeCol ? '<td class="num ' + (c.row.ev >= 0 ? 'pos' : 'neg') + '">'
+          + (c.row.ev >= 0 ? '+' : '−') + pct(Math.abs(c.row.ev)) + '</td>' : '')
+      + '<td class="num"><div class="reco-bar"><span style="width:' + Math.max(2, c.fitPct) + '%"></span></div>'
+      + '<div class="reco-sub">' + c.fitPct + (c.shortPay ? ' · short' : '') + '</div></td>'
+      + '<td class="num"><button class="btn-secondary reco-drill" data-m="' + c.market + '" data-s="' + c.side
+      + '" style="padding:5px 10px;font-size:.78rem">Details</button></td></tr>';
+  };
+
+  const modeNote = r.mode === 'edge'
+    ? '<strong>Ranked by edge.</strong> A book here is off the number, so the best bet is the mispriced '
+      + 'one regardless of shape. Your preferences still order everything below it.'
+    : '<strong>Ranked by fit.</strong> Nothing on this game is mispriced enough to bet on price alone, so '
+      + 'these are ordered by how well they match the bet you said you wanted, cheapest vig first among '
+      + 'equals. That is a preference, not an edge.';
+
+  let html = '';
+
+  if (pick) {
+    html += '<div class="verdict ' + (r.mode === 'edge' ? 'bet' : 'lean') + '">'
+      + '<div class="verdict-tag">Take</div><div class="verdict-body">'
+      + '<strong>' + esc(recoLegName(game, pick)) + '</strong> at ' + fmtPrice(pick.q.price)
+      + ' &mdash; ' + esc(pick.q.book) + ' &nbsp;·&nbsp; risk $' + stake.toFixed(0)
+      + ' to win $' + (stake * pick.payout).toFixed(0) + '<br>'
+      + recoReason(r, pick, stake)
+      + '<div style="margin-top:10px">'
+      + '<button class="btn-secondary" id="recoDrillBtn">Price it book by book</button> '
+      + '<button class="btn-secondary" id="recoCardBtn">Add to card</button> '
+      + '<button class="btn-secondary" id="recoLogBtn" title="Log to the CLV tracker once the bet is placed">Log as placed</button> '
+      + '<span class="status-line" id="recoStatus"></span></div></div></div>';
+  }
+
+  html += '<div class="stats-row">'
+    + '<div class="stat-card"><div class="stat-label">Win chance</div>'
+    + '<div class="stat-value">' + (pick ? pct(pick.row.myProb, 0) : '—') + '</div>'
+    + '<div class="stat-sub">' + (pick ? (pick.projected ? 'from your number' : 'market, vig stripped') : '') + '</div></div>'
+    + '<div class="stat-card"><div class="stat-label">Pays</div>'
+    + '<div class="stat-value">' + (pick ? '$' + (stake * pick.payout).toFixed(0) : '—') + '</div>'
+    + '<div class="stat-sub">' + (pick ? 'on $' + stake.toFixed(0) + ' at ' + fmtPrice(pick.q.price) : '') + '</div></div>'
+    + '<div class="stat-card"><div class="stat-label">Cost of the vig</div>'
+    + '<div class="stat-value ' + (pick && pick.fair.ev >= 0 ? 'pos' : '') + '">'
+    + (pick ? (pick.fair.ev >= 0 ? '+' : '') + pct(Math.abs(pick.fair.ev)) : '—') + '</div>'
+    + '<div class="stat-sub">' + (pick ? '$' + Math.abs(pick.fair.ev * stake).toFixed(2) + ' of your $' + stake.toFixed(0) : '') + '</div></div>'
+    + '<div class="stat-card"><div class="stat-label">Kelly stake</div>'
+    + '<div class="stat-value">' + (pick ? '$' + pick.row.stake.toFixed(0) : '—') + '</div>'
+    + '<div class="stat-sub">' + (pick && pick.row.stake < 1 ? 'no edge — bet for fun, not for size'
+        : (kf * 100).toFixed(0) + '% Kelly of $' + bankroll.toFixed(0)) + '</div></div></div>';
+
+  html += leanNote;
+
+  html += '<div class="section"><div class="section-title">'
+    + '<span>All six ways into ' + esc(game.away_team) + ' @ ' + esc(game.home_team) + '</span>'
+    + '<span class="section-note">best price across your books · win chances exclude pushes</span></div>'
+    + '<div class="table-wrap"><table><thead><tr>'
+    + '<th>Bet</th><th class="num">Best price</th><th class="num">Win chance</th>'
+    + '<th class="num">Pays</th><th class="num">Vig</th>'
+    + (showEdgeCol ? '<th class="num">Your edge</th>' : '')
+    + '<th class="num">Fit</th><th class="num"></th></tr></thead><tbody>'
+    + r.ranked.map(c => row(c, c === pick)).join('')
+    + (r.benched.length ? '<tr><td colspan="' + cols + '" class="reco-divider">Below your payout floor of '
+        + fmtPrice(minPay) + ' — shown for comparison, not recommended</td></tr>' : '')
+    + r.benched.map(c => row(c, false)).join('')
+    + '</tbody></table></div>'
+    + '<div class="callout' + (r.mode === 'edge' ? ' info' : '') + '">' + modeNote + '</div>';
+
+  if (missingMkts.length) {
+    html += '<div class="callout"><strong>Not every market is loaded</strong>'
+      + 'No ' + missingMkts.map(m => recoMarketName(m).toLowerCase()).join(' or ')
+      + ' prices came back for this game. Check the market boxes in Settings and fetch again — a missing '
+      + 'market can hide the best bet on the game.</div>';
+  }
+  // The same reality check the single-bet view runs, applied to whichever contract the
+  // projection is pushing hardest. A projection that moves a win probability this far past
+  // the market is far more often a bad input than a real edge, and it arrives here wearing
+  // a double-digit edge and a Take banner — so it has to be said loudly and at the top.
+  if (pick && pick.projected) {
+    const gap = live.reduce((m, c) => Math.max(m, Math.abs(c.row.myProb - c.fair.myProb)), 0);
+    if (gap > 0.08) {
+      html += '<div class="callout"><strong>Your number disagrees with the market by ' + pct(gap) + '</strong>'
+        + 'Across ' + live[0].books + ' books, that is a very large gap. Either you know something they do '
+        + 'not, or the projection is wrong — and the second is far more common. The edges above are only '
+        + 'worth what your number is worth. Clear the projection fields to rank on price alone.</div>';
+    }
+  }
+  if (thinBoard) {
+    html += '<div class="callout"><strong>Thin board</strong>'
+      + 'Fewer than ' + MIN_BOOKS_FOR_CONSENSUS + ' books are posting some of these, so the fair price is '
+      + 'one or two opinions rather than a consensus. Treat the vig column as indicative.</div>';
+  }
+  if (r.mode !== 'edge') {
+    html += '<div class="callout"><strong>None of these is a +EV bet</strong>'
+      + 'Ranking by fit picks the best-shaped, best-priced way to have money on a game you were going to '
+      + 'watch anyway. It does not make the bet profitable — at these prices the house still has the edge '
+      + 'on every row. Size it like entertainment, not like an investment.</div>';
+  }
+  html += '</div>';
+
+  wrap.innerHTML = html;
+  wireLogoFallbacks(wrap);
+
+  const drillTo = (market, side) => {
+    $('marketSel').value = market;
+    setMarketUI();
+    $('sideSel').value = side;
+    render();
+    const d = $('drillSection');
+    if (d) d.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+  wrap.querySelectorAll('.reco-drill').forEach(b =>
+    b.addEventListener('click', () => drillTo(b.dataset.m, b.dataset.s)));
+
+  if (!pick) return;
+  const entry = () => ({
+    league: league, gameKey: gameKeyOf(game), away: game.away_team, home: game.home_team,
+    commence: game.commence_time || null, market: pick.market, side: pick.side,
+    line: pick.market === 'h2h' ? 0 : pick.row.line, price: pick.q.price,
+    book: pick.q.book, bookKey: pick.q.key
+  });
+  const say = (msg, ok) => {
+    $('recoStatus').textContent = msg;
+    $('recoStatus').className = 'status-line ' + (ok ? 'ok' : '');
+  };
+  $('recoDrillBtn').addEventListener('click', () => drillTo(pick.market, pick.side));
+  $('recoCardBtn').addEventListener('click', () => {
+    const e = entry();
+    e.est = pick.projected ? (pick.market === 'totals' ? projTotal : projMargin) : pick.cons.number;
+    e.label = recoLegName(game, pick);
+    const ok = addToCard(e);
+    say(ok ? 'Added to the card.' : 'Already on the card.', ok);
+  });
+  $('recoLogBtn').addEventListener('click', () => {
+    const e = entry();
+    e.stake = Math.round(stake);
+    e.edgeAtBet = pick.row.ev;
+    e.source = 'calibrator';
+    const ok = logBet(e);
+    say(ok ? 'Logged to the CLV tracker.' : 'Already logged.', ok);
+  });
+}
+
+// The recommender and the single-bet view answer the same question at different
+// altitudes, so anything that changes the game, the bankroll or the model refreshes both.
+function renderAll() { renderReco(); render(); }
+
 function render() {
   const wrap = $('resultsWrap');
   const list = state.listed || currentGameList();
@@ -3320,7 +3770,7 @@ function computeLean() {
   state.lean = { pts: Math.abs(pts) < 0.05 ? 0 : pts, side: side, label: $('sitLabel').value.trim() };
   store.set('lean', state.lean);
   updateLeanLabel();
-  if ($('useLean').checked) render();
+  if ($('useLean').checked) renderAll();
 }
 
 function updateLeanLabel() {
@@ -3396,7 +3846,7 @@ function addManualBook() {
   $('mBook').value = '';
   populateGames();
   $('gameSel').value = '0';
-  render();
+  renderAll();
 }
 
 function init() {
@@ -3480,13 +3930,24 @@ function init() {
   $('boardCount').addEventListener('change', renderBoard);
   $('boardMinEdge').addEventListener('input', renderBoard);
 
-  $('gameSel').addEventListener('change', render);
+  $('gameSel').addEventListener('change', renderAll);
+  $('useLean').addEventListener('change', renderAll);
+  $('bankroll').addEventListener('input', () => { store.set('bankroll', $('bankroll').value); renderAll(); });
+  $('kellyFrac').addEventListener('change', () => { store.set('kellyFrac', $('kellyFrac').value); renderAll(); });
+
+  // The drill-down is a detail view of one contract; it never needs to re-rank the game.
   $('marketSel').addEventListener('change', () => { setMarketUI(); render(); });
   $('sideSel').addEventListener('change', render);
   $('estInput').addEventListener('input', render);
-  $('useLean').addEventListener('change', render);
-  $('bankroll').addEventListener('input', () => { store.set('bankroll', $('bankroll').value); render(); });
-  $('kellyFrac').addEventListener('change', () => { store.set('kellyFrac', $('kellyFrac').value); render(); });
+
+  // Which-bet controls. The two preferences and the stake are yours for the season,
+  // so they persist; the projections are per-game and deliberately do not.
+  $('recoTarget').value = store.get('recoTarget', '0.60');
+  $('recoMinPay').value = store.get('recoMinPay', '-200');
+  $('recoStake').value = store.get('recoStake', 20);
+  [['recoTarget', 'change'], ['recoMinPay', 'change'], ['recoStake', 'input']].forEach(([id, ev]) =>
+    $(id).addEventListener(ev, () => { store.set(id, $(id).value); renderReco(); }));
+  ['recoMargin', 'recoTotal'].forEach(id => $(id).addEventListener('input', renderReco));
 
   $('sitSide').addEventListener('change', () => {
     $('sitSideName').textContent = $('sitSide').value === 'home' ? 'the home team' : 'the away team';
@@ -3593,7 +4054,7 @@ function init() {
     store.set('params', state.params);
     $('paramStatus').textContent = 'Parameters saved.';
     $('paramStatus').className = 'status-line ok';
-    computeLean(); render();
+    computeLean(); renderAll();
   });
   $('resetParams').addEventListener('click', () => {
     state.params = { ...DEFAULT_PARAMS };
@@ -3601,7 +4062,7 @@ function init() {
     store.set('params', state.params);
     $('paramStatus').textContent = 'Defaults restored.';
     $('paramStatus').className = 'status-line';
-    computeLean(); render();
+    computeLean(); renderAll();
   });
 
   setMarketUI();
@@ -3612,7 +4073,7 @@ function init() {
   updateCostNote();
   renderCacheInfo();
   updateCardCount();
-  render();
+  renderAll();
   renderBoard();
   renderPlanner();
   wireClv();

@@ -10,13 +10,54 @@ Single-file static HTML — no build step, no backend, no dependencies. Open `in
 
 ## What it does
 
-This is a decision-support tool, not a pick generator. You supply a projection; it tells you whether any
-price on the board beats that projection. Its most common correct answer is "pass."
+This is a decision-support tool, not a pick generator. Ask it whether a bet is worth making and its most
+common correct answer is "pass." Ask it which bet to make on a game you are watching anyway, and it will
+answer that too — but it will tell you plainly which question it is answering.
+
+### Which bet? — one game, all six contracts
+
+A game offers six ways in: either moneyline, either spread, over or under. The rest of this app assumes
+you already know which one you want. Often you don't — you want money on tonight's game and the honest
+question is *which contract*.
+
+They are not interchangeable. The same opinion priced as a moneyline and as a spread can differ by
+several points of vig, and a −450 favourite pays $5 on $20, so being right barely matters. Pick a game
+and this ranks all six at the best price any of your books is showing:
+
+| Column | What it is |
+|---|---|
+| Win chance | De-vigged market probability at that book's line, pushes excluded — or your own number, if you gave one |
+| Pays | What your stake actually returns, net of exchange fees |
+| Vig | EV against the de-vigged consensus. **The column that earns the panel its place** — it is where a moneyline reveals itself as double the cost of the equivalent spread |
+| Fit | How well the contract matches the shape of bet you asked for |
+
+Two controls shape the answer, and both are preferences rather than predictions:
+
+- **Kind of bet you want** — a target hit rate from 75% down to 30%. The fit score is
+  `p^(1−w) · b^w`, a weighted geometric mean of win probability and payout multiple. At fair odds
+  that peaks at `p* = (1−2w)/(1−w)`, so the control is inverted to `w = (1−p*)/(2−p*)` and you pick
+  the win rate rather than an exponent.
+- **Skip anything paying less than** — a hard payout floor, default −200. Short favourites still appear
+  below the table for comparison, marked and excluded from the recommendation.
+
+**Which ranking is live is stated on every render.** If a book is priced 1% or better off the consensus,
+the top line is that bet and the panel says *Ranked by edge*. Otherwise it says *Ranked by fit*, and
+carries an explicit warning that none of the six is +EV — fit picks the best-shaped, best-priced way to
+have money on the game, and does not make the bet profitable.
+
+Fill in a projected margin or total and the six are re-priced against your number instead of the
+market's, a **Your edge** column appears, and the reasoning changes to match: an edge that comes from
+your own projection is not a stale line that will correct, it is you against the market. If your number
+moves any win probability more than 8 points past the market's, the panel says so before it says
+anything else. A situational lean with no projection of your own is applied to the market's number,
+since a lean is an adjustment rather than a projection.
+
+Every row has a **Details** button that loads that exact contract into the book-by-book view below.
 
 ### Calibrator
 
-Give it one number — your projected home margin, or your projected total — and it prices every book's
-offer against it:
+The single-contract view, for when you already know what you want to price. Give it one number — your
+projected home margin, or your projected total — and it prices every book's offer against it:
 
 - Strips the vig from each book's two-way price to recover the market's true implied probability
 - Converts your projection into a win probability **at each book's own line**, so a board of
