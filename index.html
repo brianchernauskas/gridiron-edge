@@ -443,8 +443,15 @@
         <label id="estLabel">Your projected home margin</label>
         <input id="estInput" type="number" step="0.5" value="0">
         <span class="hint" id="estHint">Positive = home wins by that much</span>
+        <span class="hint" id="estConsHint" style="font-style:normal;display:none;margin-top:2px"></span>
       </div>
     </div>
+    <p style="font-size:.85rem;color:var(--text-muted);margin-top:12px">
+      This field starts on the <strong>current consensus</strong> — the number the whole field's de-vigged
+      prices imply, refreshed whenever you change game, market or slate. Leave it there and every book is
+      priced against the market, which finds the stale book but never an opinion. Move it and the edges
+      become yours: the difference between your number and the consensus <em>is</em> the bet.
+    </p>
   </div>
 
   <div id="resultsWrap"></div>
@@ -468,6 +475,12 @@
       A team's spread and moneyline are two prices for the same opinion, so each team gets one row: whichever
       contract has the bigger edge. <strong>Other way</strong> shows the alternative's best price, edge and
       win rate. A higher win rate is not a better bet — the edge lives in the contract a book mispriced.
+    </p>
+    <p style="font-size:.85rem;color:var(--text-muted);margin-bottom:14px">
+      Only <strong>this week's games</strong> are ranked<span id="boardWeekNote"></span>. The odds feed
+      returns everything with a price up, which by Sunday already includes next Thursday; a book sitting
+      off consensus eight days out has usually just not sharpened the number yet, and it will move several
+      times before you could bet it. The week rolls over on Tuesday.
     </p>
     <div class="form-grid">
       <div class="form-group">
@@ -1319,6 +1332,32 @@ function hasStarted(g) {
 function slate(league) { return (state.games[league] || []).filter(g => !hasStarted(g)); }
 function startedCount(league) { return (state.games[league] || []).filter(hasStarted).length; }
 
+/* A football week runs Tuesday through Monday night: college's Tuesday-to-Saturday slate
+   and the NFL's Thursday, Sunday and Monday games all sit inside one window, and the next
+   week's card opens on Tuesday. The odds feed returns everything with a price posted, which
+   on a Sunday already includes next Thursday and beyond. Those aren't this week's bets —
+   their lines will move several times before kickoff, and a price sitting off consensus
+   eight days out is usually a book that hasn't sharpened the number yet rather than an
+   edge you can take. The board prices the current week only. */
+function weekEndsAt(now) {
+  const d = new Date(now === undefined ? Date.now() : now);
+  d.setHours(0, 0, 0, 0);
+  const toTue = (2 - d.getDay() + 7) % 7 || 7;   // 2 = Tuesday; on a Tuesday, roll a full week
+  d.setDate(d.getDate() + toTue);
+  return d.getTime();
+}
+function inCurrentWeek(g) {
+  if (!g || !g.commence_time) return true;       // manually entered games have no kickoff
+  const t = new Date(g.commence_time).getTime();
+  return isNaN(t) || t < weekEndsAt();
+}
+// The slate the board and the gap scan work from: this week, not yet kicked off.
+function weekSlate(league) { return slate(league).filter(inCurrentWeek); }
+function laterWeekCount(league) { return slate(league).filter(g => !inCurrentWeek(g)).length; }
+function weekEndLabel() {
+  return new Date(weekEndsAt() - 1).toLocaleDateString([], { weekday: 'long', month: 'numeric', day: 'numeric' });
+}
+
 function restoreCache() {
   ['nfl', 'cfb'].forEach(lg => {
     const c = store.get('cache_' + lg, null);
@@ -1434,6 +1473,7 @@ function populateGames() {
     return `<option value="${i}">${g.away_team} @ ${g.home_team} — ${when}</option>`;
   }).join('');
   sel.value = (prev && list[prev]) ? prev : '0';
+  setEstToConsensus();
   renderAll();
 }
 
@@ -1695,7 +1735,7 @@ function myBooks() { return store.get('myBooks', []); }
 function scanSlate(league, bankroll, kf, minEdge) {
   const bestPerBet = new Map();
   const only = myBooks();
-  slate(league).forEach(game => {
+  weekSlate(league).forEach(game => {
     ['spreads', 'totals', 'h2h'].forEach(market => {
       ['home', 'away'].forEach(side => {
         const quotes = collectQuotes(game, market, side);
@@ -1742,7 +1782,7 @@ function scanSlate(league, bankroll, kf, minEdge) {
    both sides can be backed for a locked profit regardless of result. */
 function findGaps(league) {
   const out = [];
-  slate(league).forEach(game => {
+  weekSlate(league).forEach(game => {
     ['spreads', 'totals', 'h2h'].forEach(market => {
       const H = collectQuotes(game, market, 'home');
       const A = collectQuotes(game, market, 'away');
@@ -1791,7 +1831,7 @@ function renderGaps() {
   if (!wrap) return;
   const all = ['nfl', 'cfb'].flatMap(lg => findGaps(lg));
   all.sort((a, b) => b.profit - a.profit);
-  const loaded = slate('nfl').length + slate('cfb').length;
+  const loaded = weekSlate('nfl').length + weekSlate('cfb').length;
 
   if (!all.length) {
     wrap.innerHTML = `<div class="section">
@@ -1902,6 +1942,7 @@ function missingBooksNote() {
 }
 
 function renderBoard() {
+  if ($('boardWeekNote')) $('boardWeekNote').textContent = ` — everything kicking off through ${weekEndLabel()}`;
   const n = parseInt($('boardCount').value, 10);
   const minEdge = parseFloat($('boardMinEdge').value) / 100;
   const bankroll = parseFloat($('bankroll').value) || 0;
@@ -1913,7 +1954,8 @@ function renderBoard() {
 
   const lists = {};
   const blocks = ['nfl', 'cfb'].map(lg => {
-    const loaded = slate(lg).length, started = startedCount(lg);
+    const loaded = weekSlate(lg).length, started = startedCount(lg);
+    const later = laterWeekCount(lg);
     const label = lg === 'nfl' ? 'NFL' : 'College football';
     const age = cacheAge(lg);
     // Prices decay in minutes; past a couple of hours the "edges" are mostly lines that already moved.
@@ -1925,15 +1967,19 @@ function renderBoard() {
     lists[lg] = [];
     if (!loaded) {
       return `<div class="section">
-        <div class="section-title"><span>${label}</span><span class="section-note">no slate loaded</span></div>
-        <div class="empty-state">${demoActive()
+        <div class="section-title"><span>${label}</span><span class="section-note">${
+          later ? 'nothing left this week' : 'no slate loaded'}</span></div>
+        <div class="empty-state">${later
+          ? `The ${later} ${lg.toUpperCase()} game${later === 1 ? '' : 's'} still loaded ${later === 1 ? 'kicks' : 'kick'} off after this week closes (${weekEndLabel()}), so ${later === 1 ? 'it is' : 'they are'} held back. Prices that far out move too much to shop against.`
+          : demoActive()
           ? `Every ${lg.toUpperCase()} game in the demo snapshot has kicked off. It refreshes a couple of times a week — check back, or add your own odds key on the Settings tab.`
           : started
           ? `All ${started} game${started === 1 ? '' : 's'} in the saved ${lg.toUpperCase()} slate have kicked off.<br>Use “Fetch both leagues” above to load the next one.`
           : `Switch to ${lg.toUpperCase()} on the Calibrator tab and fetch odds, or use “Fetch both leagues” above.`}</div>
       </div>`;
     }
-    const startedNote = started ? ` · ${started} started, hidden` : '';
+    const startedNote = (started ? ` · ${started} started, hidden` : '')
+      + (later ? ` · ${later} next week, held back` : '');
     const scanned = scanSlate(lg, bankroll, kf, -Infinity);
     const hits = scanned.filter(o => o.row.ev * k >= minEdge).slice(0, n);
     // Positive but under the floor: shows a short board is a tight market, not a broken scan.
@@ -3550,6 +3596,10 @@ function renderReco() {
     $('marketSel').value = market;
     setMarketUI();
     $('sideSel').value = side;
+    // Carry your own number down if you gave one above; otherwise open on the market's.
+    setEstToConsensus();
+    const proj = parseFloat($(market === 'totals' ? 'recoTotal' : 'recoMargin').value);
+    if (!isNaN(proj)) $('estInput').value = proj;
     render();
     const d = $('drillSection');
     if (d) d.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -3586,6 +3636,52 @@ function renderReco() {
   });
 }
 
+/* ---- The projection field ------------------------------------------------
+   It used to open at 0 — a pick'em on every game, which is an opinion about none of
+   them and made the first look at any game read as a huge edge on the home dog. It now
+   opens on the consensus: the number the whole field's de-vigged prices already imply.
+   Sitting there, every edge below is pure price shopping; moving off it is deliberately
+   your own opinion, priced in points. It refills on any change of game, market or slate,
+   because a number carried over from the last game is worse than no number at all. */
+function consensusEstFor(game, market, league) {
+  if (!game) return null;
+  // A moneyline is a spread at zero, so its projection is the spread's number.
+  const m = market === 'h2h' ? 'spreads' : market;
+  const cons = recoConsensus(game, m, 'home', league, null)
+            || (m === 'spreads' ? recoConsensus(game, 'h2h', 'home', league, null) : null);
+  return cons && isFinite(cons.number) ? cons : null;
+}
+
+function estConsensusNow() {
+  const list = state.listed || currentGameList();
+  return consensusEstFor(list[$('gameSel').value], $('marketSel').value, state.league);
+}
+
+function setEstToConsensus() {
+  const cons = estConsensusNow();
+  if (cons) $('estInput').value = (Math.round(cons.number * 10) / 10).toFixed(1);
+  renderEstHint();
+}
+
+function renderEstHint() {
+  const hint = $('estConsHint');
+  if (!hint) return;
+  const cons = estConsensusNow();
+  if (!cons) { hint.style.display = 'none'; hint.innerHTML = ''; return; }
+  const totals = $('marketSel').value === 'totals';
+  const num = v => totals ? v.toFixed(1) : (v >= 0 ? '+' : '−') + Math.abs(v).toFixed(1);
+  const cur = parseFloat($('estInput').value);
+  const d = isNaN(cur) ? 0 : cur - cons.number;
+  const btn = `<button type="button" id="estResetBtn"
+    style="background:none;border:none;padding:0;margin-left:6px;color:var(--accent);font:inherit;cursor:pointer;text-decoration:underline">back to consensus</button>`;
+  hint.style.display = '';
+  hint.innerHTML = `Consensus ${num(cons.number)} · ${cons.n} book${cons.n === 1 ? '' : 's'}`
+    + (cons.n < MIN_BOOKS_FOR_CONSENSUS ? ', thin' : '')
+    + (Math.abs(d) >= 0.05
+        ? ` · you are ${(d > 0 ? '+' : '−') + Math.abs(d).toFixed(1)} off it ${btn}`
+        : ' · every edge below is price shopping alone');
+}
+
 // The recommender and the single-bet view answer the same question at different
 // altitudes, so anything that changes the game, the bankroll or the model refreshes both.
 function renderAll() { renderReco(); render(); }
@@ -3604,6 +3700,7 @@ function render() {
   const market = $('marketSel').value;
   const side = $('sideSel').value;
   const league = state.league;
+  renderEstHint();
   let est = parseFloat($('estInput').value) || 0;
 
   // Apply situational lean if requested
@@ -4059,15 +4156,19 @@ function init() {
   $('boardCount').addEventListener('change', renderBoard);
   $('boardMinEdge').addEventListener('input', renderBoard);
 
-  $('gameSel').addEventListener('change', renderAll);
+  $('gameSel').addEventListener('change', () => { setEstToConsensus(); renderAll(); });
   $('useLean').addEventListener('change', renderAll);
   $('bankroll').addEventListener('input', () => { store.set('bankroll', $('bankroll').value); renderAll(); });
   $('kellyFrac').addEventListener('change', () => { store.set('kellyFrac', $('kellyFrac').value); renderAll(); });
 
   // The drill-down is a detail view of one contract; it never needs to re-rank the game.
-  $('marketSel').addEventListener('change', () => { setMarketUI(); render(); });
+  // Switching market changes the units of the projection, so it is refilled, not kept.
+  $('marketSel').addEventListener('change', () => { setMarketUI(); setEstToConsensus(); render(); });
   $('sideSel').addEventListener('change', render);
   $('estInput').addEventListener('input', render);
+  $('estConsHint').addEventListener('click', e => {
+    if (e.target.id === 'estResetBtn') { setEstToConsensus(); render(); }
+  });
 
   // Which-bet controls. The two preferences and the stake are yours for the season,
   // so they persist; the projections are per-game and deliberately do not.

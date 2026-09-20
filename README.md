@@ -56,8 +56,17 @@ Every row has a **Details** button that loads that exact contract into the book-
 
 ### Calibrator
 
-The single-contract view, for when you already know what you want to price. Give it one number — your
-projected home margin, or your projected total — and it prices every book's offer against it:
+The single-contract view, for when you already know what you want to price. It works off one number —
+your projected home margin, or your projected total — and prices every book's offer against it.
+
+**That field opens on the current consensus** rather than at zero, and refills whenever the game, the
+market or the slate changes. Left where it lands, your number *is* the market's number: every edge shown
+is pure line shopping, which is the honest default. Move it and the edges become yours — the gap between
+your number and the consensus is the bet, and the field says how far off it you are, with one click back.
+Zero was never a neutral starting point; it is a pick'em call on every game, and it made the first look
+at any game read as a large edge on the home dog.
+
+What it does with that number:
 
 - Strips the vig from each book's two-way price to recover the market's true implied probability
 - Converts your projection into a win probability **at each book's own line**, so a board of
@@ -91,6 +100,19 @@ rather than probability space. Two consequences:
 
 Pinnacle is worth fetching as a *price signal* even if you can't bet there — use the book filter to
 keep it out of recommendations while it still anchors the consensus.
+
+### The board covers this week only
+
+A football week runs **Tuesday through Monday night** — college's Tuesday-to-Saturday slate and the NFL's
+Thursday, Sunday and Monday games all sit inside one window. The Best Board and the cross-market gap scan
+rank only games kicking off inside it; the week rolls over on Tuesday.
+
+The odds feed returns everything with a price posted, which by Sunday afternoon already includes next
+Thursday and beyond. Those aren't bets you can shop today. A book sitting off consensus eight days out
+has usually just not sharpened the number yet, and it will move several times before kickoff — so it
+surfaces as a fat edge that is really an absence of pricing. Games past the boundary stay in the
+Calibrator's dropdown, where pricing a future game on purpose is fine; they are counted as *held back*
+in the board's section note rather than silently dropped.
 
 ### Spread or moneyline: one row per team
 
