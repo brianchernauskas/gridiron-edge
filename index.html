@@ -3374,8 +3374,11 @@ function recoCandidates(game, league, opts) {
     if (!quotes.length) return;
     // Consensus is built from every book; the bet itself only counts at a book you
     // can actually get down at — the same rule the Best Board uses.
-    const usable = only.length ? quotes.filter(q => only.includes(q.key)) : quotes;
-    if (!usable.length) { out.push({ market, side, blocked: 'books', books: quotes.length }); return; }
+    const owned = only.length ? quotes.filter(q => only.includes(q.key)) : quotes;
+    if (!owned.length) { out.push({ market, side, blocked: 'books', books: quotes.length }); return; }
+    // Same price window as the Best Board: a leg with nothing inside it is set aside, not ranked.
+    const usable = opts.window === false ? owned : owned.filter(q => inPriceWindow(q.price));
+    if (!usable.length) { out.push({ market, side, blocked: 'window', books: quotes.length }); return; }
 
     const proj = market === 'totals' ? opts.projTotal : opts.projMargin;
     let best = null;
@@ -3510,6 +3513,12 @@ function renderReco() {
 
   const cands = recoCandidates(game, league, { bankroll, kf, projMargin, projTotal });
   const live = cands.filter(c => !c.blocked);
+  if (!live.length && cands.some(c => c.blocked === 'window')) {
+    const pw = priceWindow();
+    wrap.innerHTML = '<div class="section"><div class="empty-state">Every price on this game is outside your window of '
+      + fmtPrice(pw.min) + ' to ' + fmtPrice(pw.max) + '. Widen it on the Best Board tab to see them.</div></div>';
+    return;
+  }
   if (!live.length) {
     wrap.innerHTML = '<div class="section"><div class="empty-state">'
       + 'No book in your list is posting a price on this game. Widen the book filter in Settings, '
@@ -3522,7 +3531,9 @@ function renderReco() {
   const showEdgeCol = !!(pick && pick.projected);
   const cols = showEdgeCol ? 8 : 7;
   const thinBoard = live.some(c => c.cons && !c.cons.leaveOneOut);
-  const missingMkts = ['h2h', 'spreads', 'totals'].filter(m => !live.some(c => c.market === m));
+  // A market set aside by the price window is loaded, just out of range — not missing.
+  const missingMkts = ['h2h', 'spreads', 'totals']
+    .filter(m => !live.some(c => c.market === m) && !cands.some(c => c.market === m && c.blocked === 'window'));
 
   const row = (c, isPick) => {
     const vig = -c.fair.ev;
@@ -3588,6 +3599,15 @@ function renderReco() {
         : (kf * 100).toFixed(0) + '% Kelly of $' + bankroll.toFixed(0)) + '</div></div></div>';
 
   html += leanNote;
+
+  const outLegs = cands.filter(c => c.blocked === 'window');
+  if (outLegs.length) {
+    const pw = priceWindow();
+    html += '<div class="callout info"><strong>' + outLegs.length + ' of 6 bets set aside by your price window</strong>'
+      + outLegs.map(c => esc(recoLegName(game, c))).join(', ') + ' — every book prices '
+      + (outLegs.length === 1 ? 'it' : 'them') + ' outside ' + fmtPrice(pw.min) + ' to ' + fmtPrice(pw.max)
+      + '. Change the window on the Best Board tab.</div>';
+  }
 
   html += '<div class="section"><div class="section-title">'
     + '<span>All six ways into ' + esc(game.away_team) + ' @ ' + esc(game.home_team) + '</span>'
@@ -3767,9 +3787,22 @@ function render() {
     return;
   }
 
-  const rows = quotes.map(q => evaluateRow(q, market, side, est, league, bankroll, kf))
-                     .sort((a, b) => b.ev - a.ev);
+  const allRows = quotes.map(q => evaluateRow(q, market, side, est, league, bankroll, kf))
+                        .sort((a, b) => b.ev - a.ev);
+  // Same price window as the board. If every book is outside it, show them all rather than
+  // nothing, but say so — the verdict below is then on a price you said you don't want.
+  const winRows = allRows.filter(r => inPriceWindow(r.price));
+  const rows = winRows.length ? winRows : allRows;
   const best = rows[0];
+  const pw = priceWindow();
+  const windowNote = !winRows.length
+    ? `<div class="callout"><strong>Every price on this bet is outside your window</strong>
+       No book has it between ${fmtPrice(pw.min)} and ${fmtPrice(pw.max)}, so the verdict below is on a price you
+       said you don't want. Consider the same team's ${market === 'h2h' ? 'spread' : 'moneyline'} instead.</div>`
+    : winRows.length < allRows.length
+    ? `<div class="callout info"><strong>${allRows.length - winRows.length} book${allRows.length - winRows.length === 1 ? '' : 's'} hidden by your price window</strong>
+       Priced outside ${fmtPrice(pw.min)} to ${fmtPrice(pw.max)}. Change it on the Best Board tab.</div>`
+    : '';
 
   // Market consensus at the modal line
   const marketLine = market === 'h2h' ? null : modal(quotes.filter(q => q.line !== null).map(q => q.line));
@@ -3854,6 +3887,7 @@ function render() {
 
     ${leanNote}
     ${keyNote}
+    ${windowNote}
 
     <div class="section">
       <div class="section-title">
