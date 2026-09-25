@@ -498,6 +498,16 @@
         <span class="hint">Below ~1% the vig eats it</span>
       </div>
       <div class="form-group">
+        <label>Shortest price</label>
+        <input id="priceMin" type="number" step="5" value="-125">
+        <span class="hint">Heaviest favorite you'll lay</span>
+      </div>
+      <div class="form-group">
+        <label>Longest price</label>
+        <input id="priceMax" type="number" step="5" value="150">
+        <span class="hint">Biggest dog you'll take</span>
+      </div>
+      <div class="form-group">
         <label>&nbsp;</label>
         <button class="btn-primary" id="boardFetch">Fetch both leagues</button>
         <span class="hint">costs <span id="boardCost">—</span></span>
@@ -1732,7 +1742,30 @@ function staleMinutes(q) {
 
 function myBooks() { return store.get('myBooks', []); }
 
-function scanSlate(league, bankroll, kf, minEdge) {
+/* ---- Price window --------------------------------------------------------
+   Ranking by EV per dollar rewards longshots: the consensus is backed out through a
+   modelled margin distribution, and the further into the tail a price sits, the more a
+   small error in that tail shows up as a big percentage "edge". Those are also the bets
+   that lose 4 of every 5 and make a slate's results unreadable. The window keeps the
+   board on prices where the de-vigged consensus is most reliable. It is applied before
+   the spread-vs-ML pick, so a +600 moneyline steps aside for the same team's spread. */
+const PRICE_MIN_DEFAULT = -125, PRICE_MAX_DEFAULT = 150;
+
+function priceWindow() {
+  const lo = parseFloat(store.get('priceMin', PRICE_MIN_DEFAULT));
+  const hi = parseFloat(store.get('priceMax', PRICE_MAX_DEFAULT));
+  return {
+    min: isFinite(lo) && Math.abs(lo) >= 100 ? lo : PRICE_MIN_DEFAULT,
+    max: isFinite(hi) && Math.abs(hi) >= 100 ? hi : PRICE_MAX_DEFAULT
+  };
+}
+
+function inPriceWindow(price) {
+  const w = priceWindow(), dec = americanToDecimal(price);
+  return dec >= americanToDecimal(w.min) - 1e-9 && dec <= americanToDecimal(w.max) + 1e-9;
+}
+
+function scanSlate(league, bankroll, kf, minEdge, opts = {}) {
   const bestPerBet = new Map();
   const only = myBooks();
   weekSlate(league).forEach(game => {
@@ -1745,6 +1778,7 @@ function scanSlate(league, bankroll, kf, minEdge) {
           // Consensus is built from every book; the bet itself only counts at a
           // book you can actually get down at.
           if (only.length && !only.includes(q.key)) return;
+          if (opts.window !== false && !inPriceWindow(q.price)) return;
           const cons = marketConsensus(game, market, side, q.book, league);
           if (!cons || cons.n < MIN_BOOKS_FOR_CONSENSUS - 1) return;
           const est = cons.number;
@@ -1984,7 +2018,12 @@ function renderBoard() {
     const hits = scanned.filter(o => o.row.ev * k >= minEdge).slice(0, n);
     // Positive but under the floor: shows a short board is a tight market, not a broken scan.
     const near = scanned.filter(o => o.row.ev > 0 && o.row.ev * k < minEdge).length;
-    const nearNote = near ? ` · ${near} more positive under ${pct(minEdge)}` : '';
+    // Flags that only exist outside the price window — mostly longshots — are counted, not shown.
+    const outside = scanSlate(lg, bankroll, kf, -Infinity, { window: false })
+      .filter(o => o.row.ev * k >= minEdge && !inPriceWindow(o.row.price)).length;
+    const pw = priceWindow();
+    const nearNote = (near ? ` · ${near} more positive under ${pct(minEdge)}` : '')
+      + (outside ? ` · ${outside} outside ${fmtPrice(pw.min)} to ${fmtPrice(pw.max)}, hidden` : '');
     lists[lg] = hits;
     if (!hits.length) {
       return `<div class="section">
@@ -2871,7 +2910,15 @@ function bucketOf(v, buckets) {
   return buckets.find(([hi]) => v < hi)[1];
 }
 
+// Price band the bet was taken at. Shows whether the leak is longshots (model tail error) or
+// the -110 to +150 core the board now targets. Boundaries are decimal odds for −150/−115/+150/+300.
+const PRICE_BUCKETS = [[1.667, 'Heavy fav (shorter than −150)'], [1.87, 'Fav (−150 to −115)'],
+                       [2.5, 'Core (−115 to +150)'], [4.0, 'Dog (+150 to +300)'],
+                       [Infinity, 'Longshot (+300 or more)']];
+
 const CLV_GROUPS = {
+  price:  { label: 'Price band', order: PRICE_BUCKETS.map(x => x[1]).concat('—'),
+            key: b => typeof b.price === 'number' ? bucketOf(americanToDecimal(b.price), PRICE_BUCKETS) : '—' },
   edge:   { label: 'Edge when logged', order: EDGE_BUCKETS.map(x => x[1]).concat('—'),
             key: b => bucketOf(b.edgeAtBet, EDGE_BUCKETS) },
   timing: { label: 'Logged before kickoff', order: LEAD_BUCKETS.map(x => x[1]).concat('—'),
@@ -4155,6 +4202,15 @@ function init() {
   $('boardRescan').addEventListener('click', renderBoard);
   $('boardCount').addEventListener('change', renderBoard);
   $('boardMinEdge').addEventListener('input', renderBoard);
+  [['priceMin', PRICE_MIN_DEFAULT], ['priceMax', PRICE_MAX_DEFAULT]].forEach(([id, def]) => {
+    $(id).value = store.get(id, def);
+    $(id).addEventListener('change', () => {
+      const v = parseFloat($(id).value);
+      if (isFinite(v) && Math.abs(v) >= 100) store.set(id, v);
+      else $(id).value = store.get(id, def);
+      renderBoard();
+    });
+  });
 
   $('gameSel').addEventListener('change', () => { setEstToConsensus(); renderAll(); });
   $('useLean').addEventListener('change', renderAll);
